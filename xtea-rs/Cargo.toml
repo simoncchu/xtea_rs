@@ -1,0 +1,26 @@
+[package]
+name = "xtea"
+version = "0.1.0"
+edition = "2021"
+description = "xTea (comprehensive transposable element analyzer) re-implemented in Rust"
+license = "AGPL-3.0-only"
+repository = "https://github.com/parklab/xTea"
+
+[features]
+default = []
+# Enable remote (http/https/s3) BAM/CRAM access through htslib's libcurl support.
+remote = ["rust-htslib/curl"]
+
+[dependencies]
+rust-htslib = { version = "1.0", default-features = false, features = ["bzip2", "lzma"] }
+indexmap = "2"
+rayon = "1"
+clap = { version = "4", features = ["derive"] }
+flate2 = "1"
+anyhow = "1"
+libc = "0.2"
+
+[profile.release]
+opt-level = 3
+debug = false
+lto = "thin"
