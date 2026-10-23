@@ -65,7 +65,7 @@ fn has_large_indel_in_read(l_cigar: &[(u32, u32)]) -> bool {
 }
 
 /// `is_concrdant`
-fn is_concrdant(chrm: &str, map_pos: i64, mate_chrm: &str, mate_pos: i64, ins_pos: i64, i_is: i64) -> bool {
+fn is_concrdant(chrm: &str, map_pos: i64, mate_chrm: &str, mate_pos: i64, ins_pos: i64, i_is: f64) -> bool {
     if chrm == mate_chrm {
         let rl = gv::read_length();
         let (i_start, i_end) = if map_pos > mate_pos {
@@ -74,7 +74,7 @@ fn is_concrdant(chrm: &str, map_pos: i64, mate_chrm: &str, mate_pos: i64, ins_po
             (map_pos as f64, mate_pos as f64 + rl)
         };
         let ip = ins_pos as f64;
-        if i_start <= ip && i_end >= ip && (ip - i_start) <= i_is as f64 && (i_end - ip) <= i_is as f64 {
+        if i_start <= ip && i_end >= ip && (ip - i_start) <= i_is && (i_end - ip) <= i_is {
             return true;
         }
     }
@@ -87,12 +87,15 @@ impl XGenotyper {
     }
 
     /// `collect_features_one_site` -> the feature line of the site
-    pub fn collect_features_one_site(&self, chrm: &str, ins_pos: i64, extnd: i64, sf_bam: &str) -> Result<String> {
-        let mut start_pos = ins_pos - extnd;
-        if start_pos <= 0 {
-            start_pos = 1;
+    pub fn collect_features_one_site(&self, chrm: &str, ins_pos: i64, extnd: f64, sf_bam: &str) -> Result<String> {
+        // the extension may be a float (DFT_IS set to the mean insert size); pysam truncates the
+        // region coordinates
+        let mut start_pos = ins_pos as f64 - extnd;
+        if start_pos <= 0.0 {
+            start_pos = 1.0;
         }
-        let end_pos = ins_pos + extnd;
+        let end_pos = ins_pos as f64 + extnd;
+        let (start_pos, end_pos) = (start_pos.trunc() as i64, end_pos.trunc() as i64);
         let bam_info = BamInfo::new(sf_bam, &self.sf_reference);
         let b_with_chr = bam_info.is_chrm_contain_chr()?;
         let chrm_in_bam = process_chrm_name(chrm, b_with_chr);
@@ -216,7 +219,7 @@ impl XGenotyper {
             if m_clip_qname.contains(qname) {
                 continue;
             }
-            if is_concrdant(&chrm_in_bam, *map_pos, mate_chrm, *mate_pos, ins_pos, dft_is as i64) {
+            if is_concrdant(&chrm_in_bam, *map_pos, mate_chrm, *mate_pos, ins_pos, dft_is) {
                 n_concd_pairs += 1;
             }
         }
@@ -241,6 +244,11 @@ impl XGenotyper {
     /// `call_genotype`: collect the features of the sites of `sf_candidate_list` for each BAM and
     /// merge them (per-BAM outputs are kept as `sf_out{i}.out`).
     pub fn call_genotype(&self, sf_bam_list: &str, sf_candidate_list: &str, extnd: i64, sf_out: &str) -> Result<()> {
+        self.call_genotype_f(sf_bam_list, sf_candidate_list, extnd as f64, sf_out)
+    }
+
+    /// `call_genotype` with a (possibly float) extension
+    pub fn call_genotype_f(&self, sf_bam_list: &str, sf_candidate_list: &str, extnd: f64, sf_out: &str) -> Result<()> {
         let mut l_bams = Vec::new();
         for line in utils::read_lines(sf_bam_list)? {
             let f = split_ws(&line);

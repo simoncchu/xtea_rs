@@ -418,3 +418,83 @@ mod tests {
         assert_eq!(got, vec![1008, 1015, 1007]);
     }
 }
+
+/// `frexp`: v = m * 2^e with 0.5 <= |m| < 1 (m = 0, e = 0 for v = 0).
+fn frexp(v: f64) -> (f64, i32) {
+    if v == 0.0 || !v.is_finite() {
+        return (v, 0);
+    }
+    let bits = v.to_bits();
+    let exp = ((bits >> 52) & 0x7ff) as i32;
+    if exp == 0 {
+        // subnormal: scale up first
+        let (m, e) = frexp(v * f64::from_bits(0x4350000000000000)); // 2^54
+        return (m, e - 54);
+    }
+    let m = f64::from_bits((bits & !(0x7ffu64 << 52)) | (1022u64 << 52));
+    (m, exp - 1022)
+}
+
+/// CPython hash of a float (`_Py_HashDouble`); equals `py_hash_int` for integral values.
+pub fn py_hash_float(v: f64) -> i64 {
+    const BITS: i32 = 61;
+    const MODULUS: u64 = (1u64 << 61) - 1;
+    if !v.is_finite() {
+        if v.is_infinite() {
+            return if v > 0.0 { 314159 } else { -314159 };
+        }
+        return 0;
+    }
+    let (mut m, mut e) = frexp(v);
+    let mut sign: i64 = 1;
+    if m < 0.0 {
+        sign = -1;
+        m = -m;
+    }
+    let mut x: u64 = 0;
+    while m != 0.0 {
+        x = ((x << 28) & MODULUS) | (x >> (BITS - 28));
+        m *= 268435456.0;
+        e -= 28;
+        let y = m as u64;
+        m -= y as f64;
+        x += y;
+        if x >= MODULUS {
+            x -= MODULUS;
+        }
+    }
+    let e = if e >= 0 { e % BITS } else { BITS - 1 - ((-1 - e) % BITS) };
+    x = ((x << e) & MODULUS) | (x >> (BITS - e));
+    let mut h = (x as i64).wrapping_mul(sign);
+    if h == -1 {
+        h = -2;
+    }
+    h
+}
+
+#[cfg(test)]
+mod float_hash_tests {
+    use super::*;
+    #[test]
+    fn matches_cpython() {
+        // python3 -c 'print(hash(v), hash((v, v+1)))'
+        let cases: [(f64, i64, i64); 9] = [
+            (0.0, 0, -1950498447580522560),
+            (1.5, 1152921504606846977, -1826667736619738083),
+            (-1.5, -1152921504606846977, 6303917944917004362),
+            (412.763, 1759358216029995420, -4589340060353359633),
+            (123456.5, 1152921504606970432, -2883518688192945867),
+            (10000000000.25, 576460762303423488, 5010364700553156067),
+            (3.14159, 326484311674566659, -665526534675067629),
+            (0.1, 230584300921369408, 7298586803571078865),
+            (99999999.987, 2275867058165375231, -576834598107756429),
+        ];
+        for (v, h, ht) in cases {
+            assert_eq!(py_hash_float(v), h, "hash({})", v);
+            assert_eq!(py_hash_tuple(&[py_hash_float(v), py_hash_float(v + 1.0)]), ht, "hash(({}, {}))", v, v + 1.0);
+        }
+        for i in [-5i64, 0, 1, 7, 123456789, 1 << 40] {
+            assert_eq!(py_hash_float(i as f64), py_hash_int(i));
+        }
+    }
+}

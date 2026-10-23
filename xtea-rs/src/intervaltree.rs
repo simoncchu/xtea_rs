@@ -6,7 +6,7 @@
 //! iteration order of the CPython sets holding the intervals are reproduced exactly, so that
 //! "take the first hit" logic in xTea returns the same interval as the Python implementation.
 
-use crate::py::set::{py_hash_int, py_hash_tuple};
+use crate::py::set::{py_hash_float, py_hash_tuple};
 use std::collections::HashMap;
 
 const NIL: u32 = u32::MAX;
@@ -244,7 +244,7 @@ impl IvSet {
 
 #[derive(Clone, Debug)]
 struct Node {
-    x_center: i64,
+    x_center: f64,
     s_center: IvSet,
     left: u32,
     right: u32,
@@ -252,15 +252,28 @@ struct Node {
     balance: i32,
 }
 
-/// Interval tree keyed by half-open integer intervals `[begin, end)`.
+/// Interval tree keyed by half-open intervals `[begin, end)`.  Coordinates are stored as f64
+/// so that the float intervals the original sometimes builds (e.g. an annotation extended by a
+/// mean insert size) are handled; integer intervals behave exactly as Python ints do (CPython
+/// hashes integral floats like the equal ints).
 #[derive(Clone, Debug, Default)]
 pub struct IntervalTree {
     nodes: Vec<Node>,
-    begins: Vec<i64>,
-    ends: Vec<i64>,
+    begins: Vec<f64>,
+    ends: Vec<f64>,
     hashes: Vec<i64>,
-    index: HashMap<(i64, i64), u32>,
+    index: HashMap<(u64, u64), u32>,
     top: Option<u32>,
+}
+
+#[inline]
+fn fkey(v: f64) -> u64 {
+    // +0.0 and -0.0 are the same key (equal in Python)
+    if v == 0.0 {
+        0
+    } else {
+        v.to_bits()
+    }
 }
 
 impl IntervalTree {
@@ -302,7 +315,7 @@ impl IntervalTree {
     }
 
     #[inline]
-    fn contains_point(&self, iv: u32, p: i64) -> bool {
+    fn contains_point(&self, iv: u32, p: f64) -> bool {
         self.begins[iv as usize] <= p && p < self.ends[iv as usize]
     }
 
@@ -316,7 +329,7 @@ impl IntervalTree {
         self.begins[iv as usize] > self.nodes[n as usize].x_center
     }
 
-    fn new_node<I: IntoIterator<Item = u32>>(&mut self, x_center: i64, s_center: I) -> u32 {
+    fn new_node<I: IntoIterator<Item = u32>>(&mut self, x_center: f64, s_center: I) -> u32 {
         let mut set = IvSet::new();
         for id in s_center {
             set.add(id, &self.hashes);
@@ -488,7 +501,9 @@ impl IntervalTree {
             // sorted(self.s_center, key=attrgetter('end', 'begin'))
             let mut ivs: Vec<u32> = self.nodes[n as usize].s_center.to_vec();
             ivs.sort_by(|&a, &b| {
-                (self.ends[a as usize], self.begins[a as usize]).cmp(&(self.ends[b as usize], self.begins[b as usize]))
+                (self.ends[a as usize], self.begins[a as usize])
+                    .partial_cmp(&(self.ends[b as usize], self.begins[b as usize]))
+                    .unwrap_or(std::cmp::Ordering::Equal)
             });
             let max_iv = ivs.pop().expect("pop_greatest_child on empty node");
             let mut new_x_center = self.nodes[n as usize].x_center;
@@ -496,7 +511,11 @@ impl IntervalTree {
                 if self.ends[next_max_iv as usize] == self.ends[max_iv as usize] {
                     continue;
                 }
-                new_x_center = new_x_center.max(self.ends[next_max_iv as usize]);
+                // Python max(): keeps the first argument on ties
+                let cand = self.ends[next_max_iv as usize];
+                if cand > new_x_center {
+                    new_x_center = cand;
+                }
             }
             let members: Vec<u32> = self.nodes[n as usize]
                 .s_center
@@ -543,9 +562,14 @@ impl IntervalTree {
         }
     }
 
-    /// `IntervalTree.addi(begin, end)` (data = None).
+    /// `IntervalTree.addi(begin, end)` (data = None) for integer coordinates.
     pub fn addi(&mut self, begin: i64, end: i64) {
-        if self.index.contains_key(&(begin, end)) {
+        self.addf(begin as f64, end as f64)
+    }
+
+    /// `IntervalTree.addi(begin, end)` with float coordinates.
+    pub fn addf(&mut self, begin: f64, end: f64) {
+        if self.index.contains_key(&(fkey(begin), fkey(end))) {
             return;
         }
         if begin >= end {
@@ -554,8 +578,8 @@ impl IntervalTree {
         let id = self.begins.len() as u32;
         self.begins.push(begin);
         self.ends.push(end);
-        self.hashes.push(py_hash_tuple(&[py_hash_int(begin), py_hash_int(end)]));
-        self.index.insert((begin, end), id);
+        self.hashes.push(py_hash_tuple(&[py_hash_float(begin), py_hash_float(end)]));
+        self.index.insert((fkey(begin), fkey(end)), id);
         match self.top {
             None => {
                 let n = self.new_node(begin, [id]);
@@ -568,8 +592,14 @@ impl IntervalTree {
         }
     }
 
-    /// `tree[p]` / `tree.at(p)`: all intervals containing `p`, in CPython set iteration order.
+    /// `tree[p]` / `tree.at(p)`: all intervals containing `p`, in CPython set iteration order
+    /// (integer coordinates).
     pub fn at(&self, p: i64) -> Vec<(i64, i64)> {
+        self.at_f(p as f64).into_iter().map(|(b, e)| (b as i64, e as i64)).collect()
+    }
+
+    /// `tree[p]` with float coordinates.
+    pub fn at_f(&self, p: f64) -> Vec<(f64, f64)> {
         let mut result = IvSet::new();
         let mut cur = match self.top {
             None => return Vec::new(),

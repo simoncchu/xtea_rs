@@ -5,7 +5,9 @@ use crate::clip_disc_filter::XClipDiscFilter;
 use crate::globals as gv;
 use crate::intermediate_sites as xsites;
 use crate::py::fmt::py_int;
+use crate::orphan_transduction::XOrphanTransduction;
 use crate::tei_locator::{TeLocator, TeMultiLocator};
+use crate::transduction::XTransduction;
 use crate::utils;
 use anyhow::{anyhow, Result};
 
@@ -252,11 +254,165 @@ fn not_ported(step: &str) -> Result<()> {
     Err(anyhow!("step `{}` is not available in this build of xtea-rs yet", step))
 }
 
-pub fn run_transduction(_opts: &Opts, _b_automatic: bool, _b_tumor: bool, _f_purity: f64, _b_resume: bool, _n_jobs: usize) -> Result<()> {
-    not_ported("--transduction")
+/// `--transduction`
+pub fn run_transduction(opts: &Opts, b_automatic: bool, b_tumor: bool, f_purity: f64, b_resume: bool, n_jobs: usize) -> Result<()> {
+    let sf_bam_list = req(&opts.bam, "-b")?;
+    let sf_candidate_list = opts.input.as_str();
+    let sf_raw_disc = opts.input2.as_str();
+    let mut iextnd: i64 = 400;
+    let bin_size: i64 = 50000000;
+    let sf_cns = opt_str(&opts.reference);
+    let s_working_folder = opts.wfolder.as_str();
+    println!("Current working folder is: {}\n", s_working_folder);
+    let sf_reference = opt_str(&opts.r#ref);
+    let sf_flank = opt_str(&opts.fflank);
+    let i_flank_lenth = opts.flklen.unwrap_or(0);
+    let sf_output = req(&opts.output, "-o")?;
+    let sf_rmsk = opt_str(&opts.annotation);
+    let i_rep_type = opts.rep_type;
+    if b_resume && utils::is_file(sf_output) {
+        return Ok(());
+    }
+    if utils::is_file(&sf_flank) {
+        let (rcd, basic_rcd) = automatic_gnrt_parameters(sf_bam_list, &sf_reference, s_working_folder, n_jobs, false, b_tumor, f_purity)?;
+        let z = basic_rcd.zero;
+        println!("Mean insert size is: {}\n", py_f(basic_rcd.mean_is, z));
+        println!("Standard derivation is: {}\n", py_f(basic_rcd.std_var, z));
+        let max_is = py_int(basic_rcd.mean_is + 3.0 * basic_rcd.std_var);
+        if iextnd < max_is {
+            iextnd = max_is;
+        }
+        let mut i_concord_dist: i64 = 550;
+        let f_concord_ratio = 0.25;
+        if i_concord_dist < max_is {
+            i_concord_dist = max_is;
+        }
+        set_globals_from_basic(&basic_rcd, max_is);
+        let ave_cov = basic_rcd.cov;
+        let mut n_clip_cutoff = opts.cliprep;
+        let mut n_disc_cutoff = opts.ndisc;
+        if b_automatic {
+            n_clip_cutoff = rcd.0;
+            n_disc_cutoff = rcd.1;
+        }
+        let xtransduction = XTransduction::new(s_working_folder, n_jobs, &sf_reference);
+        let sf_tmp_slct = format!("{}.slct", sf_raw_disc);
+        let xannotation = xtransduction.prep_annotation_interval_tree(&sf_rmsk, 225)?;
+        xtransduction.re_slct_with_clip_raw_disc_sites(sf_raw_disc, sf_candidate_list, n_disc_cutoff, &xannotation, i_rep_type, b_tumor, &sf_tmp_slct, true)?;
+        let x_cd_filter = XClipDiscFilter::new(sf_bam_list, s_working_folder, n_jobs, &sf_reference);
+        let i_max_cov = ave_cov * (gv::MAX_COV_TIMES + 1) as f64;
+        let sf_output_tmp = format!("{}{}", sf_output, gv::TD_NON_SIBLING_SUFFIX);
+        xtransduction.call_candidate_transduction_v3(
+            &sf_tmp_slct,
+            sf_candidate_list,
+            &x_cd_filter,
+            &sf_flank,
+            &sf_cns,
+            i_flank_lenth,
+            iextnd,
+            bin_size,
+            n_clip_cutoff,
+            n_disc_cutoff,
+            i_concord_dist,
+            f_concord_ratio,
+            &xannotation,
+            sf_bam_list,
+            i_rep_type,
+            i_max_cov,
+            ave_cov,
+            &sf_output_tmp,
+        )?;
+        let xorphan = XOrphanTransduction::new(s_working_folder, n_jobs, &sf_reference);
+        let n_half_disc_cutoff = n_disc_cutoff as f64 / 2.0;
+        let i_search_win = 2000;
+        let sf_updated_cns = sf_output;
+        let sf_sibling_td = format!("{}.sibling_transduction_from_existing_list", sf_output);
+        xorphan.call_sibling_td_from_existing_list(
+            &sf_output_tmp,
+            sf_bam_list,
+            iextnd,
+            n_half_disc_cutoff,
+            i_search_win,
+            &xannotation,
+            i_rep_type,
+            i_max_cov,
+            sf_updated_cns,
+            &sf_sibling_td,
+        )?;
+        let sf_ori_hc = format!("{}{}", sf_candidate_list, gv::HIGH_CONFIDENT_SUFFIX);
+        let sf_new_hc = format!("{}{}", sf_output, gv::HIGH_CONFIDENT_SUFFIX);
+        xorphan.td.update_high_confident_callset(&sf_ori_hc, sf_updated_cns, &sf_new_hc)?;
+    } else {
+        utils::copyfile(sf_candidate_list, sf_output)?;
+        let sf_ori_hc = format!("{}{}", sf_candidate_list, gv::HIGH_CONFIDENT_SUFFIX);
+        let sf_new_hc = format!("{}{}", sf_output, gv::HIGH_CONFIDENT_SUFFIX);
+        utils::copyfile(&sf_ori_hc, &sf_new_hc)?;
+    }
+    Ok(())
 }
-pub fn run_sibling(_opts: &Opts, _b_automatic: bool, _b_tumor: bool, _f_purity: f64, _n_jobs: usize) -> Result<()> {
-    not_ported("--sibling")
+
+/// The common prologue of the `--sibling` branches.
+fn sibling_params(opts: &Opts, b_automatic: bool, b_tumor: bool, f_purity: f64, n_jobs: usize) -> Result<(i64, i64, i64, f64)> {
+    let sf_bam_list = req(&opts.bam, "-b")?;
+    let sf_reference = opt_str(&opts.r#ref);
+    let (rcd, basic_rcd) = automatic_gnrt_parameters(sf_bam_list, &sf_reference, &opts.wfolder, n_jobs, false, b_tumor, f_purity)?;
+    let z = basic_rcd.zero;
+    println!("Mean insert size is: {}\n", py_f(basic_rcd.mean_is, z));
+    println!("Standard derivation is: {}\n", py_f(basic_rcd.std_var, z));
+    let max_is = py_int(basic_rcd.mean_is + 3.0 * basic_rcd.std_var);
+    let mut i_concord_dist: i64 = 550;
+    if i_concord_dist < max_is {
+        i_concord_dist = max_is;
+    }
+    gv::set_read_length(basic_rcd.rlth);
+    gv::set_insert_size(basic_rcd.mean_is);
+    gv::set_average_cov(basic_rcd.cov);
+    gv::set_average_cov_is_int(matches!(basic_rcd.cov_py, crate::num::PyNum::Int(_)));
+    let mut n_clip_cutoff = opts.cliprep;
+    let mut n_disc_cutoff = opts.ndisc;
+    if b_automatic {
+        n_clip_cutoff = rcd.0;
+        n_disc_cutoff = rcd.1;
+    }
+    Ok((i_concord_dist, n_clip_cutoff, n_disc_cutoff, basic_rcd.mean_is))
+}
+
+/// `--sibling`
+pub fn run_sibling(opts: &Opts, b_automatic: bool, b_tumor: bool, f_purity: f64, n_jobs: usize) -> Result<()> {
+    let sf_bam_list = req(&opts.bam, "-b")?;
+    let sf_pre_step_out = opts.input.as_str();
+    let sf_raw_disc = opts.input2.as_str();
+    let s_working_folder = opts.wfolder.as_str();
+    println!("Current working folder is: {}\n", s_working_folder);
+    let sf_reference = opt_str(&opts.r#ref);
+    let sf_flank = opt_str(&opts.fflank);
+    let sf_output = req(&opts.output, "-o")?;
+    let sf_rmsk = opt_str(&opts.annotation);
+    let i_rep_type = opts.rep_type;
+    let sf_black_list = opts.blacklist.as_str();
+    if utils::is_file(&sf_flank) {
+        let (i_concord_dist, n_clip_cutoff, n_disc_cutoff, mean_is) = sibling_params(opts, b_automatic, b_tumor, f_purity, n_jobs)?;
+        let mut xorphan = XOrphanTransduction::new(s_working_folder, n_jobs, &sf_reference);
+        xorphan.td.set_boundary_extend(mean_is);
+        let xannotation = xorphan.td.prep_annotation_interval_tree(&sf_rmsk, 225)?;
+        let sf_tmp_slct2 = format!("{}.slct2", sf_raw_disc);
+        let sf_output_tmp = format!("{}{}", sf_pre_step_out, gv::TD_NON_SIBLING_SUFFIX);
+        xorphan.td.re_slct_with_clip_raw_disc_sites(sf_raw_disc, &sf_output_tmp, n_disc_cutoff, &xannotation, i_rep_type, b_tumor, &sf_tmp_slct2, false)?;
+        let m_failed_ori_td = xorphan.distinguish_source_from_insertion_for_td(sf_pre_step_out, sf_bam_list, i_concord_dist, sf_black_list, &sf_rmsk)?;
+        let sf_sibling_td = sf_output;
+        if !utils::is_file(sf_black_list) {
+            println!("Blacklist file {} does not exist!", sf_black_list);
+        }
+        xorphan.call_novel_sibling_td_from_raw_list(&sf_tmp_slct2, sf_bam_list, i_concord_dist, n_clip_cutoff, n_disc_cutoff, sf_black_list, &sf_rmsk, sf_sibling_td)?;
+        XOrphanTransduction::append_to_existing_list(sf_sibling_td, sf_pre_step_out, &m_failed_ori_td)?;
+        XOrphanTransduction::append_to_existing_list(sf_sibling_td, &format!("{}{}", sf_pre_step_out, gv::HIGH_CONFIDENT_SUFFIX), &m_failed_ori_td)?;
+    } else if utils::is_file(sf_pre_step_out) {
+        let (i_concord_dist, _n_clip_cutoff, _n_disc_cutoff, _mean_is) = sibling_params(opts, b_automatic, b_tumor, f_purity, n_jobs)?;
+        let xorphan = XOrphanTransduction::new(s_working_folder, n_jobs, &sf_reference);
+        let m_failed_ori_td = xorphan.distinguish_source_from_insertion_for_td(sf_pre_step_out, sf_bam_list, i_concord_dist, sf_black_list, &sf_rmsk)?;
+        XOrphanTransduction::update_existing_list_only(sf_pre_step_out, &m_failed_ori_td)?;
+    }
+    Ok(())
 }
 pub fn run_case_control(_opts: &Opts, _b_automatic: bool, _b_tumor: bool, _n_jobs: usize) -> Result<()> {
     not_ported("--case_control")
