@@ -1,0 +1,4 @@
+L1.txt LINE1 xTea_30x
+Alu.txt ALU xTea_30x
+SVA.txt SVA xTea_30x
+L1.txt LINE1 xTea_10x

@@ -1,0 +1,12 @@
+##fileformat=VCFv4.2
+##reference=genome.fa
+##contig=<ID=chr1,length=6000000>
+##contig=<ID=chr2,length=4000000>
+##contig=<ID=chr10,length=3000000>
+##contig=<ID=chr1_random,length=5>
+##contig=<ID=chrUn_x,length=5>
+##contig=<ID=HLA-A,length=5>
+##source=xTea_contig
+##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	sB
+chr2	300	.	A	<INS:ME:SVA>	.	PASS	SVTYPE=INS:ME:SVA;SVLEN=1500;END=310;TSD=+AC;TSDLEN=2;SUBTYPE=one_side;TD_SRC=x;STRAND=+;AF=0.5;REF_REP=not_in_copy;GENE_INFO=not_gene_region	GT	0/1

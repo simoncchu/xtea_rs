@@ -1,0 +1,7 @@
+NA1 male B0 EUR
+NA2 male B1 EUR
+hg3 male B2 AFR
+HG4 male B3 AFR
+HG5 male B4 EAS
+S6 male B5 AMR
+HG9 female B9 SAS

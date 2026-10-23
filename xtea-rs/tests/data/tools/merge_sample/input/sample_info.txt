@@ -1,0 +1,4 @@
+sA male S1 EUR
+sB female S2 EUR
+sC male S3 AFR
+sA male S1b EUR

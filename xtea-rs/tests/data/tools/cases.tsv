@@ -1,0 +1,6 @@
+merge_sample	merger	-S -i sample_info.txt -x rslt_list.txt -y 15 -p out
+merge_population	merger	-P -i sample_info.txt -x rslt_list.txt -w 50 -p out -o out/pop.vcf
+cmp_single	cmp	-i calls.txt --bcmk bcmk.txt --exclude exclude.txt --extnd 150 -o out/res
+cmp_group	cmp	-L --list list.txt --bcmk bcmk.txt -o out/grp
+cmp_unicode	cmp	-i calls.txt --bcmk bcmk.txt --extnd 20 -o out/u
+population_af	af	pop.vcf out/af.csv

@@ -1,0 +1,13 @@
+##fileformat=VCFv4.2
+##reference=genome.fa
+##contig=<ID=chr1,length=6000000>
+##contig=<ID=chr2,length=4000000>
+##contig=<ID=chr10,length=3000000>
+##contig=<ID=chr1_random,length=5>
+##contig=<ID=chrUn_x,length=5>
+##contig=<ID=HLA-A,length=5>
+##source=xTea_contig
+##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	sA
+chr10	727	.	A	<INS:ME:HERV-K>	.	PASS	SVTYPE=INS:ME:HERV-K;SVLEN=5000;END=740;TSD=+AC;TSDLEN=2;SUBTYPE=one_side;TD_SRC=not_transduction;STRAND=+;AF=0.5;REF_REP=not_in_copy;GENE_INFO=not_gene_region	GT	0/1
+chr2	99	.	A	<INS:ME:HERV-K>	.	PASS	SVTYPE=INS:ME:HERV-K;SVLEN=5000;END=110;TSD=+AC;TSDLEN=2;SUBTYPE=one_side;TD_SRC=not_transduction;STRAND=+;AF=0.5;REF_REP=not_in_copy;GENE_INFO=not_gene_region	GT	0/1

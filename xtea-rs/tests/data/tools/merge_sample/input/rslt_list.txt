@@ -1,0 +1,4 @@
+sA res/sA
+sB res/sB/
+sC res/sC
+sD res/sD

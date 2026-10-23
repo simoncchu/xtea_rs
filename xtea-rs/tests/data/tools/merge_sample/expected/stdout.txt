@@ -1,0 +1,17 @@
+Merging sub-type vcf of sample sA
+Running command: sort -k1,1V -k2,2n -o out/sA.vcf.sorted out/sA.vcf.unsorted
+
+Merging sub-type vcf of sample sB
+[Get VCF head]: File res/sB/L1/sB_LINE1.vcf doesn't exist!
+File res/sB/L1/sB_LINE1.vcf doesn't exist!
+File res/sB/Alu/sB_ALU.vcf doesn't exist!!
+File res/sB/HERV/sB_HERV.vcf doesn't exist!!
+Running command: sort -k1,1V -k2,2n -o out/sB.vcf.sorted out/sB.vcf.unsorted
+
+Merging sub-type vcf of sample sC
+[Get VCF head]: File res/sC/L1/sC_LINE1.vcf doesn't exist!
+File res/sC/L1/sC_LINE1.vcf doesn't exist!
+File res/sC/SVA/sC_SVA.vcf doesn't exist!!
+File res/sC/HERV/sC_HERV.vcf doesn't exist!!
+Running command: sort -k1,1V -k2,2n -o out/sC.vcf.sorted out/sC.vcf.unsorted
+

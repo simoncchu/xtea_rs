@@ -1,0 +1,14 @@
+##fileformat=VCFv4.2
+##reference=genome.fa
+##contig=<ID=chr1,length=6000000>
+##contig=<ID=chr2,length=4000000>
+##contig=<ID=chr10,length=3000000>
+##contig=<ID=chr1_random,length=5>
+##contig=<ID=chrUn_x,length=5>
+##contig=<ID=HLA-A,length=5>
+##source=xTea_contig
+##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	sA
+chr1	1035	.	A	<INS:ME:ALU>	.	PASS	SVTYPE=INS:ME:ALU;SVLEN=280;END=1050;TSD=+AC;TSDLEN=2;SUBTYPE=two_side_tprt_both;TD_SRC=not_transduction;STRAND=+;AF=0.5;REF_REP=not_in_copy;GENE_INFO=not_gene_region	GT	0/1
+chr1	990	.	A	<INS:ME:ALU>	.	PASS	SVTYPE=INS:ME:ALU;SVLEN=280;END=1000;TSD=+AC;TSDLEN=2;SUBTYPE=two_side_tprt_both;TD_SRC=not_transduction;STRAND=+;AF=0.5;REF_REP=not_in_copy;GENE_INFO=not_gene_region	GT	0/1
+chr10	700	.	A	<INS:ME:ALU>	.	PASS	SVTYPE=INS:ME:ALU;SVLEN=280;END=710;TSD=+AC;TSDLEN=2;SUBTYPE=one_side;TD_SRC=not_transduction;STRAND=+;AF=0.5;REF_REP=not_in_copy;GENE_INFO=not_gene_region	GT	0/1

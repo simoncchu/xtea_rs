@@ -33,6 +33,7 @@ pub mod rep_type;
 pub mod rng;
 pub mod steps;
 pub mod tei_locator;
+pub mod tools;
 pub mod transduction;
 pub mod union_find;
 pub mod utils;

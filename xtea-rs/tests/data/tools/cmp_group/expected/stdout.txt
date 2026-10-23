@@ -1,0 +1,29 @@
+{'xTea_30x': {'LINE1': 'L1.txt', 'ALU': 'Alu.txt', 'SVA': 'SVA.txt'}, 'xTea_10x': {'LINE1': 'L1.txt'}}
+##########LINE1############
+Original call set size: 18
+
+Fall in high confident regions: 18
+
+#########################
+14/39 hits/all
+##########ALU############
+Original call set size: 20
+
+Fall in high confident regions: 20
+
+#########################
+16/39 hits/all
+##########SVA############
+Original call set size: 7
+
+Fall in high confident regions: 7
+
+#########################
+7/39 hits/all
+##########LINE1############
+Original call set size: 18
+
+Fall in high confident regions: 18
+
+#########################
+14/39 hits/all

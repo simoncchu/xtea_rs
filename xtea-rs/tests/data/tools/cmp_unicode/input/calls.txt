@@ -1,0 +1,8 @@
+chr1 149129 a
+chr1٤٥٧٢٧٥b
+chr1　946109　c
+chr1	946109	dup
+chr	10	x
+chrchr1	20	y
+chr2	1572575
+chr2	3583035	last

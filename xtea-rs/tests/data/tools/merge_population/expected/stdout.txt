@@ -1,0 +1,5 @@
+Running command: sort -k1,1V -k2,2n -o out/pop.vcf.tmp_sorted out/pop.vcf.tmp_unsorted
+
+Running command: sort -k1,1V -k2,2n -o out/pop.vcf.td_src.tmp_sorted out/pop.vcf.td_src.tmp_unsorted
+
+UNK not in sample list

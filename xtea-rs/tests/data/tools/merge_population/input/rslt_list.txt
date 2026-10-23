@@ -1,0 +1,7 @@
+NA1 v/NA1.vcf
+NA2 v/NA2.vcf
+hg3 v/hg3.vcf
+HG4 v/HG4.vcf
+HG5 v/HG5.vcf
+S6 v/S6.vcf
+UNK v/UNK.vcf
