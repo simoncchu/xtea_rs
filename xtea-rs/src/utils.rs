@@ -2,7 +2,7 @@
 
 use anyhow::{anyhow, Result};
 use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -83,47 +83,31 @@ pub fn mkdir_p(p: &str) {
 /// Python `str.split()` (split on runs of whitespace, dropping empty fields).
 #[inline]
 pub fn split_ws(s: &str) -> Vec<&str> {
-    s.split(|c: char| c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\x0b' || c == '\x0c' || ('\x1c'..='\x1f').contains(&c))
-        .filter(|t| !t.is_empty())
-        .collect()
+    crate::py::text::py_split_ws(s)
 }
 
-/// Read all lines (keeping content, without the trailing newline), like iterating a file and
-/// calling rstrip("\n") implicitly via split.  Lines keep any '\r'.
+/// Lines of a text file without their line terminator (Python iteration over `open(path)`:
+/// strict UTF-8, universal newlines, then the trailing "\n" removed).
 pub fn read_lines(path: &str) -> Result<Vec<String>> {
-    let f = File::open(path).map_err(|e| anyhow!("cannot open {}: {}", path, e))?;
-    let r = BufReader::new(f);
-    let mut v = Vec::new();
-    for l in r.lines() {
-        v.push(l?);
-    }
-    Ok(v)
-}
-
-/// Iterate over the raw lines of a file, each including its trailing "\n" if present (like
-/// Python's file iteration).
-pub fn read_raw_lines(path: &str) -> Result<Vec<String>> {
-    let data = std::fs::read(path).map_err(|e| anyhow!("cannot open {}: {}", path, e))?;
-    let text = String::from_utf8_lossy(&data);
-    let mut v = Vec::new();
-    let mut start = 0;
-    let bytes = text.as_bytes();
-    for (i, &b) in bytes.iter().enumerate() {
-        if b == b'\n' {
-            v.push(text[start..=i].to_string());
-            start = i + 1;
+    let mut v = crate::py::text::read_text_lines(path)?;
+    for l in v.iter_mut() {
+        if l.ends_with('\n') {
+            l.pop();
         }
     }
-    if start < bytes.len() {
-        v.push(text[start..].to_string());
-    }
     Ok(v)
+}
+
+/// Iterate over the raw lines of a file, each including its trailing "\n" if present (Python's
+/// iteration over `open(path)`: strict UTF-8 and universal newlines).
+pub fn read_raw_lines(path: &str) -> Result<Vec<String>> {
+    crate::py::text::read_text_lines(path)
 }
 
 /// Python `line.rstrip()` (strip all trailing whitespace).
 #[inline]
 pub fn rstrip(s: &str) -> &str {
-    s.trim_end_matches(|c: char| c.is_whitespace())
+    crate::py::text::py_rstrip(s)
 }
 
 /// Buffered writer creation (Python `open(path, "w")`).

@@ -414,8 +414,60 @@ pub fn run_sibling(opts: &Opts, b_automatic: bool, b_tumor: bool, f_purity: f64,
     }
     Ok(())
 }
-pub fn run_case_control(_opts: &Opts, _b_automatic: bool, _b_tumor: bool, _n_jobs: usize) -> Result<()> {
-    not_ported("--case_control")
+/// `--case_control`: somatic calls of the case filtered with the control BAMs
+/// (`--somatic_hc`: keep the high-confidence calls that are in the raw somatic set).
+pub fn run_case_control(opts: &Opts, b_automatic: bool, _b_tumor: bool, n_jobs: usize) -> Result<()> {
+    let sf_candidate_list = opts.input.as_str();
+    let s_working_folder = opts.wfolder.as_str();
+    if !opts.somatic_hc {
+        let sf_bam_list = req(&opts.bam, "-b")?;
+        let sf_ref = opt_str(&opts.r#ref);
+        let mut nclip_cutoff = opts.cliprep;
+        let mut ndisc_cutoff = opts.ndisc;
+        let sf_rep_cns = req(&opts.reference, "-r")?;
+        let sf_flank = req(&opts.fflank, "--fflank")?;
+        let b_force = true;
+        let mut n_polya_cutoff = 0i64;
+        let mut basic_rcd = None;
+        if b_automatic {
+            let (rcd, brcd) = crate::cli::automatic_gnrt_parameters_case_control(sf_bam_list, &sf_ref, s_working_folder, n_jobs, b_force)?;
+            nclip_cutoff = rcd.0;
+            ndisc_cutoff = rcd.1;
+            n_polya_cutoff = rcd.2;
+            basic_rcd = Some(brcd);
+        }
+        let ccm = crate::somatic::CaseControlMode::new(&sf_ref, s_working_folder, n_jobs);
+        // without the automatic parameters the original subscripts None here
+        let basic = basic_rcd.ok_or_else(|| anyhow!("TypeError: 'NoneType' object is not subscriptable"))?;
+        let rlth = basic.rlth;
+        let mean_is = basic.mean_is;
+        gv::set_insert_size(py_int(mean_is) as f64);
+        let std_var = basic.std_var;
+        let max_is = py_int(mean_is + 3.0 * std_var) + py_int(rlth);
+        let extnd = max_is;
+        let bin_size = 50000000;
+        println!("clip,disc,polyA-cutoff is ({}, {}, {})", nclip_cutoff, ndisc_cutoff, n_polya_cutoff);
+        n_polya_cutoff = ndisc_cutoff;
+        let sf_output = req(&opts.output, "-o")?;
+        let i_flk_len = opts.flklen.ok_or_else(|| anyhow!("option --flklen is required for this step"))?;
+        ccm.call_somatic_te_insertion(
+            sf_bam_list,
+            sf_candidate_list,
+            extnd,
+            nclip_cutoff,
+            ndisc_cutoff,
+            n_polya_cutoff,
+            sf_rep_cns,
+            sf_flank,
+            i_flk_len,
+            bin_size,
+            sf_output,
+        )
+    } else {
+        let sf_output = req(&opts.output, "-o")?;
+        let ccm = crate::somatic::CaseControlMode::new("", s_working_folder, 1);
+        ccm.parse_high_confident_somatic(sf_candidate_list, &opts.input2, sf_output)
+    }
 }
 /// `--postF`: post filtering of the raw calls.
 pub fn run_post_filter(opts: &Opts, b_tumor: bool, n_jobs: usize) -> Result<()> {
@@ -427,7 +479,8 @@ pub fn run_post_filter(opts: &Opts, b_tumor: bool, n_jobs: usize) -> Result<()> 
     let sf_black_list = opts.blacklist.as_str();
     let i_min_copy_len = 225;
     if opts.post_f_mosaic {
-        return not_ported("--postF --postFmosaic");
+        let xpf_mosic = crate::mosaic::MosaicCaller::new(s_working_folder, n_jobs);
+        return xpf_mosic.run_call_mosaic(sf_xtea_rslt, sf_rmsk, i_min_copy_len, i_rep_type, sf_black_list, sf_new_out);
     }
     let xbasic = crate::basic_info::XBasicInfo::new(s_working_folder, 1, "");
     let (f_cov, _f_ave_cov) = xbasic.load_get_cov()?;
@@ -455,8 +508,15 @@ pub fn run_gvcf(opts: &Opts) -> Result<()> {
     let sf_prefix = req(&opts.output, "-o")?;
     crate::gvcf::run_gvcf_step(&sf_ref, sf_bam_list, &opts.input, opts.rep_type, sf_prefix)
 }
-pub fn run_joint(_opts: &Opts, _n_jobs: usize) -> Result<()> {
-    not_ported("--joint")
+/// `--joint` (with `--postFmosaic`): keep the mosaic calls seen in a single sample.
+pub fn run_joint(opts: &Opts, n_jobs: usize) -> Result<()> {
+    let islack = 50;
+    if opts.post_f_mosaic {
+        let mzc_joint = crate::mosaic::MosaicJointCalling::new(&opts.wfolder, n_jobs)?;
+        let sf_out = req(&opts.output, "-o")?;
+        mzc_joint.call_mosaic_from_multi_samples(&opts.input, islack, sf_out)?;
+    }
+    Ok(())
 }
 /// `--igv`: IGV batch script for screenshots of the given sites.
 pub fn run_igv(opts: &Opts, _n_jobs: usize) -> Result<()> {

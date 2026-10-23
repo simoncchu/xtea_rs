@@ -6,3 +6,4 @@ pub mod optparse;
 pub mod pickle;
 pub mod random;
 pub mod set;
+pub mod text;

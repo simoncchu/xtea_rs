@@ -10,8 +10,16 @@ use anyhow::{anyhow, Result};
 use clap::Parser;
 
 #[derive(Parser, Debug, Clone, Default)]
-#[command(name = "xtea_main", about = "xTea: transposable element insertion caller (Rust re-implementation of x_TEA_main.py)", infer_long_args = true)]
+#[command(
+    name = "xtea_main",
+    about = "xTea: transposable element insertion caller (Rust re-implementation of x_TEA_main.py)",
+    infer_long_args = true,
+    args_override_self = true,
+    disable_help_flag = true
+)]
 pub struct Opts {
+    #[arg(short = 'h', long = "help", help = "show this help message and exit")]
+    pub help: bool,
     #[arg(short = 'P', long = "preprocess", help = "Preprocessing stpes")]
     pub preprocess: bool,
     #[arg(short = 'Q', long = "collectclip", help = "Call clipped reads from alignment")]
@@ -109,19 +117,19 @@ pub struct Opts {
     #[arg(long = "single_sample", help = "For single sample (like igv screenshot)")]
     pub single_sample: bool,
 
-    #[arg(allow_hyphen_values = true, short = 'i', long = "input", default_value = "", help = "input file ")]
+    #[arg(allow_hyphen_values = true, short = 'i', long = "input", value_name = "FILE", default_value = "", help = "input file ")]
     pub input: String,
-    #[arg(allow_hyphen_values = true, long = "input2", default_value = "", help = "input file2 ")]
+    #[arg(allow_hyphen_values = true, long = "input2", value_name = "FILE", default_value = "", help = "input file2 ")]
     pub input2: String,
-    #[arg(allow_hyphen_values = true, short = 'r', long = "reference", help = "The reference file ")]
+    #[arg(allow_hyphen_values = true, short = 'r', long = "reference", value_name = "FILE", help = "The reference file ")]
     pub reference: Option<String>,
-    #[arg(allow_hyphen_values = true, short = 'a', long = "annotation", help = "The annotation file ")]
+    #[arg(allow_hyphen_values = true, short = 'a', long = "annotation", value_name = "FILE", help = "The annotation file ")]
     pub annotation: Option<String>,
-    #[arg(allow_hyphen_values = true, short = 'b', long = "bam", help = "Input bam file")]
+    #[arg(allow_hyphen_values = true, short = 'b', long = "bam", value_name = "FILE", help = "Input bam file")]
     pub bam: Option<String>,
-    #[arg(allow_hyphen_values = true, short = 'd', long = "barcode_bam", help = "Input barcode indexed bam file")]
+    #[arg(allow_hyphen_values = true, short = 'd', long = "barcode_bam", value_name = "FILE", help = "Input barcode indexed bam file")]
     pub barcode_bam: Option<String>,
-    #[arg(allow_hyphen_values = true, short = 'o', long = "output", help = "The output file")]
+    #[arg(allow_hyphen_values = true, short = 'o', long = "output", value_name = "FILE", help = "The output file")]
     pub output: Option<String>,
     #[arg(allow_hyphen_values = true, short = 'p', long = "path", default_value = "./", help = "Working folder")]
     pub wfolder: String,
@@ -131,17 +139,17 @@ pub struct Opts {
     pub cores: i64,
     #[arg(allow_hyphen_values = true, value_parser = crate::py::optparse::parse_int, short = 'e', long = "extend", default_value_t = 0, help = "extend length")]
     pub extend: i64,
-    #[arg(allow_hyphen_values = true, short = 'u', long = "dup", help = "duplication files")]
+    #[arg(allow_hyphen_values = true, short = 'u', long = "dup", value_name = "FILE", help = "duplication files")]
     pub duplication: Option<String>,
-    #[arg(allow_hyphen_values = true, long = "fflank", help = "flank region file")]
+    #[arg(allow_hyphen_values = true, long = "fflank", value_name = "FILE", help = "flank region file")]
     pub fflank: Option<String>,
     #[arg(allow_hyphen_values = true, value_parser = crate::py::optparse::parse_int, long = "flklen", help = "flank region file")]
     pub flklen: Option<i64>,
     #[arg(allow_hyphen_values = true, value_parser = crate::py::optparse::parse_float, long = "purity", default_value_t = 0.45, help = "Tumor purity")]
     pub purity: f64,
-    #[arg(allow_hyphen_values = true, long = "ref", help = "repeat consensus/copies")]
+    #[arg(allow_hyphen_values = true, long = "ref", value_name = "FILE", help = "repeat consensus/copies")]
     pub r#ref: Option<String>,
-    #[arg(allow_hyphen_values = true, long = "cns", help = "repeat consensus")]
+    #[arg(allow_hyphen_values = true, long = "cns", value_name = "FILE", help = "repeat consensus")]
     pub cns: Option<String>,
     #[arg(allow_hyphen_values = true, value_parser = crate::py::optparse::parse_int, long = "sc", default_value_t = 2, help = "cutoff of minimum # of clipped reads at the exact position, use larger value for 10X")]
     pub siteclip: i64,
@@ -169,9 +177,9 @@ pub struct Opts {
     pub rmsk_extnd: i64,
     #[arg(allow_hyphen_values = true, value_parser = crate::py::optparse::parse_int, long = "rtype", default_value_t = 1, help = "type of repeats: 1-L1, 2-Alu, 4-SVA, 8-HERV, 16-MIT, 32-MSTA")]
     pub rep_type: i64,
-    #[arg(allow_hyphen_values = true, long = "blacklist", default_value = "null", help = "Reference panel database for filtering, or a blacklist region")]
+    #[arg(allow_hyphen_values = true, long = "blacklist", value_name = "FILE", default_value = "null", help = "Reference panel database for filtering, or a blacklist region")]
     pub blacklist: String,
-    #[arg(allow_hyphen_values = true, long = "model", default_value = "null", help = "Already trained model for genotype classification")]
+    #[arg(allow_hyphen_values = true, long = "model", value_name = "FILE", default_value = "null", help = "Already trained model (.pkl file) for genotype classification")]
     pub model: String,
     #[arg(allow_hyphen_values = true, long = "seed", help = "Seed of the random site sampling (default: $XTEA_SEED if set, otherwise random as the original)")]
     pub seed: Option<u64>,

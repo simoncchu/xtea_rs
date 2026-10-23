@@ -1161,6 +1161,71 @@ impl XTransduction {
         Ok(())
     }
 
+    /// `collect_realign_reads` (case-control mode): re-collect the clipped and discordant reads
+    /// of the control for the transduction candidates, align them to the flanks (and the clipped
+    /// reads to the consensus); returns the transduction sources and the clip polyA counts.
+    #[allow(clippy::too_many_arguments)]
+    pub fn collect_realign_reads(
+        &self,
+        sf_raw_slct: &str,
+        sf_te_candidates: &str,
+        x_filter: &XClipDiscFilter,
+        sf_flank: &str,
+        i_flank_length: i64,
+        extnd: i64,
+        bin_size: i64,
+        n_disc_cutoff: i64,
+        sf_cns: &str,
+        sf_out: &str,
+    ) -> Result<(SiteMap<(String, i64)>, SiteMap<[i64; 6]>)> {
+        let ileftmost_cns = if gv::is_call_sva() { 5000 } else { 500 };
+        let l_fl_polymorpic = self.pick_full_length_insertion(sf_te_candidates, ileftmost_cns)?;
+        let sf_flank_with_poly = format!("{}all_with_polymerphic_flanks.fa", self.working_folder);
+        self.construct_novel_flanks(&l_fl_polymorpic, sf_flank, i_flank_length, &sf_flank_with_poly)?;
+        let bwa_align = BwAlign::new(gv::BWA_PATH, gv::BWA_REALIGN_CUTOFF, self.n_jobs as i64);
+        if !utils::is_file(&format!("{}.sa", sf_flank_with_poly)) {
+            utils::run_cmd_small_output(&format!("{} index {}", gv::BWA_PATH, sf_flank_with_poly));
+        }
+        let sf_clip_fq = format!("{}raw_candidate_sites_all_clip.fq", self.working_folder);
+        let sf_disc_fa = format!("{}raw_candidate_sites_all_disc.fa", self.working_folder);
+        x_filter.collect_clipped_disc_reads(sf_raw_slct, extnd, bin_size, &sf_clip_fq, &sf_disc_fa)?;
+        let sf_disc_algnmt = format!("{}temp_transduction_disc.sam", self.working_folder);
+        bwa_align.realign_disc_reads(&sf_flank_with_poly, &sf_disc_fa, &sf_disc_algnmt);
+        XClipDiscFilter::clean_file_by_path(&sf_disc_fa);
+        // n_disc_cutoff / 2 (true division)
+        let mut n_half_cutoff = n_disc_cutoff as f64 / 2.0;
+        if n_half_cutoff <= 1.0 {
+            n_half_cutoff = n_disc_cutoff as f64;
+        }
+        // the original passes no repeat type here (default -1)
+        let (m_disc_transd, m_orphan) = self.parse_transduction_disc_algnmt(&sf_disc_algnmt, i_flank_length, n_half_cutoff, -1)?;
+        let mut m_all_td: SiteMap<(String, i64)> = IndexMap::new();
+        {
+            let mut fout = utils::create(&format!("{}.unique_trsdct_disc_only", sf_out))?;
+            for (ins_chrm, m) in m_disc_transd.iter() {
+                let e = m_all_td.entry(ins_chrm.clone()).or_default();
+                for (&ins_pos, rcd) in m.iter() {
+                    writeln!(fout, "{}\t{}\t{}\t{}", ins_chrm, ins_pos, rcd.source, rcd.max_cnt)?;
+                    e.insert(ins_pos, (rcd.source.clone(), rcd.max_cnt));
+                }
+            }
+            for (ins_chrm, m) in m_orphan.iter() {
+                let e = m_all_td.entry(ins_chrm.clone()).or_default();
+                for (&ins_pos, rcd) in m.iter() {
+                    let i_max_spt = rcd.1 + rcd.2;
+                    writeln!(fout, "{}\t{}\t{}\t{}", ins_chrm, ins_pos, rcd.0, i_max_spt)?;
+                    e.insert(ins_pos, (rcd.0.clone(), i_max_spt));
+                }
+            }
+            fout.flush()?;
+        }
+        let sf_clip_algnmt = format!("{}temp_transduction_clip.sam", self.working_folder);
+        bwa_align.realign_clipped_read_with_polya(sf_cns, &sf_clip_fq, &sf_clip_algnmt)?;
+        XClipDiscFilter::clean_file_by_path(&sf_clip_fq);
+        let (_m_lclip_trsd, _m_rclip_trsd, m_clip_polya) = self.parse_transduction_clip_algnmt(&sf_clip_algnmt, i_flank_length)?;
+        Ok((m_all_td, m_clip_polya))
+    }
+
     /// `call_candidate_transduction_v3`
     #[allow(clippy::too_many_arguments)]
     pub fn call_candidate_transduction_v3(
