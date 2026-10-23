@@ -2,6 +2,7 @@
 //! original Python implementation of xTea.
 pub mod fmt;
 pub mod numpy;
+pub mod optparse;
 pub mod pickle;
 pub mod random;
 pub mod set;

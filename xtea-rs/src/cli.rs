@@ -10,7 +10,7 @@ use anyhow::{anyhow, Result};
 use clap::Parser;
 
 #[derive(Parser, Debug, Clone, Default)]
-#[command(name = "xtea_main", about = "xTea: transposable element insertion caller (Rust re-implementation of x_TEA_main.py)")]
+#[command(name = "xtea_main", about = "xTea: transposable element insertion caller (Rust re-implementation of x_TEA_main.py)", infer_long_args = true)]
 pub struct Opts {
     #[arg(short = 'P', long = "preprocess", help = "Preprocessing stpes")]
     pub preprocess: bool,
@@ -94,7 +94,7 @@ pub struct Opts {
     pub flk_map: bool,
     #[arg(long = "analysis", help = "Result analysis")]
     pub analysis: bool,
-    #[arg(long = "flank", help = "flank regions")]
+    #[arg(allow_hyphen_values = true, long = "flank", help = "flank regions")]
     pub flank: Option<String>,
     #[arg(long = "sv", help = "Call promoted SVs")]
     pub sv: bool,
@@ -109,72 +109,75 @@ pub struct Opts {
     #[arg(long = "single_sample", help = "For single sample (like igv screenshot)")]
     pub single_sample: bool,
 
-    #[arg(short = 'i', long = "input", default_value = "", help = "input file ")]
+    #[arg(allow_hyphen_values = true, short = 'i', long = "input", default_value = "", help = "input file ")]
     pub input: String,
-    #[arg(long = "input2", default_value = "", help = "input file2 ")]
+    #[arg(allow_hyphen_values = true, long = "input2", default_value = "", help = "input file2 ")]
     pub input2: String,
-    #[arg(short = 'r', long = "reference", help = "The reference file ")]
+    #[arg(allow_hyphen_values = true, short = 'r', long = "reference", help = "The reference file ")]
     pub reference: Option<String>,
-    #[arg(short = 'a', long = "annotation", help = "The annotation file ")]
+    #[arg(allow_hyphen_values = true, short = 'a', long = "annotation", help = "The annotation file ")]
     pub annotation: Option<String>,
-    #[arg(short = 'b', long = "bam", help = "Input bam file")]
+    #[arg(allow_hyphen_values = true, short = 'b', long = "bam", help = "Input bam file")]
     pub bam: Option<String>,
-    #[arg(short = 'd', long = "barcode_bam", help = "Input barcode indexed bam file")]
+    #[arg(allow_hyphen_values = true, short = 'd', long = "barcode_bam", help = "Input barcode indexed bam file")]
     pub barcode_bam: Option<String>,
-    #[arg(short = 'o', long = "output", help = "The output file")]
+    #[arg(allow_hyphen_values = true, short = 'o', long = "output", help = "The output file")]
     pub output: Option<String>,
-    #[arg(short = 'p', long = "path", default_value = "./", help = "Working folder")]
+    #[arg(allow_hyphen_values = true, short = 'p', long = "path", default_value = "./", help = "Working folder")]
     pub wfolder: String,
-    #[arg(long = "cp", help = "Working folder for shared clipped reads")]
+    #[arg(allow_hyphen_values = true, long = "cp", help = "Working folder for shared clipped reads")]
     pub cwfolder: Option<String>,
-    #[arg(short = 'n', long = "cores", default_value_t = 1, help = "number of cores")]
+    #[arg(allow_hyphen_values = true, value_parser = crate::py::optparse::parse_int, short = 'n', long = "cores", default_value_t = 1, help = "number of cores")]
     pub cores: i64,
-    #[arg(short = 'e', long = "extend", default_value_t = 0, help = "extend length")]
+    #[arg(allow_hyphen_values = true, value_parser = crate::py::optparse::parse_int, short = 'e', long = "extend", default_value_t = 0, help = "extend length")]
     pub extend: i64,
-    #[arg(short = 'u', long = "dup", help = "duplication files")]
+    #[arg(allow_hyphen_values = true, short = 'u', long = "dup", help = "duplication files")]
     pub duplication: Option<String>,
-    #[arg(long = "fflank", help = "flank region file")]
+    #[arg(allow_hyphen_values = true, long = "fflank", help = "flank region file")]
     pub fflank: Option<String>,
-    #[arg(long = "flklen", help = "flank region file")]
+    #[arg(allow_hyphen_values = true, value_parser = crate::py::optparse::parse_int, long = "flklen", help = "flank region file")]
     pub flklen: Option<i64>,
-    #[arg(long = "purity", default_value_t = 0.45, help = "Tumor purity")]
+    #[arg(allow_hyphen_values = true, value_parser = crate::py::optparse::parse_float, long = "purity", default_value_t = 0.45, help = "Tumor purity")]
     pub purity: f64,
-    #[arg(long = "ref", help = "repeat consensus/copies")]
+    #[arg(allow_hyphen_values = true, long = "ref", help = "repeat consensus/copies")]
     pub r#ref: Option<String>,
-    #[arg(long = "cns", help = "repeat consensus")]
+    #[arg(allow_hyphen_values = true, long = "cns", help = "repeat consensus")]
     pub cns: Option<String>,
-    #[arg(long = "sc", default_value_t = 2, help = "cutoff of minimum # of clipped reads at the exact position, use larger value for 10X")]
+    #[arg(allow_hyphen_values = true, value_parser = crate::py::optparse::parse_int, long = "sc", default_value_t = 2, help = "cutoff of minimum # of clipped reads at the exact position, use larger value for 10X")]
     pub siteclip: i64,
-    #[arg(long = "lc", default_value_t = 3, help = "cutoff of minimum # of left clipped reads")]
+    #[arg(allow_hyphen_values = true, value_parser = crate::py::optparse::parse_int, long = "lc", default_value_t = 3, help = "cutoff of minimum # of left clipped reads")]
     pub lclip: i64,
-    #[arg(long = "rc", default_value_t = 3, help = "cutoff of minimum # of rightt clipped reads")]
+    #[arg(allow_hyphen_values = true, value_parser = crate::py::optparse::parse_int, long = "rc", default_value_t = 3, help = "cutoff of minimum # of rightt clipped reads")]
     pub rclip: i64,
-    #[arg(long = "cr", default_value_t = 1, help = "cutoff of minimum # of clipped parts fall in repeats")]
+    #[arg(allow_hyphen_values = true, value_parser = crate::py::optparse::parse_int, long = "cr", default_value_t = 1, help = "cutoff of minimum # of clipped parts fall in repeats")]
     pub cliprep: i64,
-    #[arg(long = "nd", default_value_t = 5, help = "cutoff of minimum # of discordant pair")]
+    #[arg(allow_hyphen_values = true, value_parser = crate::py::optparse::parse_int, long = "nd", default_value_t = 5, help = "cutoff of minimum # of discordant pair")]
     pub ndisc: i64,
-    #[arg(long = "nb", default_value_t = 500, help = "cutoff of maximum # of molecure coverage")]
+    #[arg(allow_hyphen_values = true, value_parser = crate::py::optparse::parse_int, long = "nb", default_value_t = 500, help = "cutoff of maximum # of molecure coverage")]
     pub nbarcode: i64,
-    #[arg(long = "teilen", help = "minimum length of the insertion for future analysis")]
+    #[arg(allow_hyphen_values = true, value_parser = crate::py::optparse::parse_int, long = "teilen", help = "minimum length of the insertion for future analysis")]
     pub teilen: Option<i64>,
-    #[arg(long = "cov", default_value_t = 30.0, help = "approximate read depth")]
+    #[arg(allow_hyphen_values = true, value_parser = crate::py::optparse::parse_float, long = "cov", default_value_t = 30.0, help = "approximate read depth")]
     pub cov: f64,
-    #[arg(long = "iniclip", default_value_t = 2, help = "initial minimum clip cutoff")]
+    #[arg(allow_hyphen_values = true, value_parser = crate::py::optparse::parse_int, long = "iniclip", default_value_t = 2, help = "initial minimum clip cutoff")]
     pub iniclip: i64,
-    #[arg(long = "af1", default_value_t = 0.005, help = "minimal allel fraction")]
+    #[arg(allow_hyphen_values = true, value_parser = crate::py::optparse::parse_float, long = "af1", default_value_t = 0.005, help = "minimal allel fraction")]
     pub af1: f64,
-    #[arg(long = "af2", default_value_t = 0.45, help = "minimal allel fraction")]
+    #[arg(allow_hyphen_values = true, value_parser = crate::py::optparse::parse_float, long = "af2", default_value_t = 0.45, help = "minimal allel fraction")]
     pub af2: f64,
-    #[arg(long = "rmsk_extnd", default_value_t = 100, help = "Length of the left extended region when loading the repeatmasker output")]
+    #[arg(allow_hyphen_values = true, value_parser = crate::py::optparse::parse_int, long = "rmsk_extnd", default_value_t = 100, help = "Length of the left extended region when loading the repeatmasker output")]
     pub rmsk_extnd: i64,
-    #[arg(long = "rtype", default_value_t = 1, help = "type of repeats: 1-L1, 2-Alu, 4-SVA, 8-HERV, 16-MIT, 32-MSTA")]
+    #[arg(allow_hyphen_values = true, value_parser = crate::py::optparse::parse_int, long = "rtype", default_value_t = 1, help = "type of repeats: 1-L1, 2-Alu, 4-SVA, 8-HERV, 16-MIT, 32-MSTA")]
     pub rep_type: i64,
-    #[arg(long = "blacklist", default_value = "null", help = "Reference panel database for filtering, or a blacklist region")]
+    #[arg(allow_hyphen_values = true, long = "blacklist", default_value = "null", help = "Reference panel database for filtering, or a blacklist region")]
     pub blacklist: String,
-    #[arg(long = "model", default_value = "null", help = "Already trained model for genotype classification")]
+    #[arg(allow_hyphen_values = true, long = "model", default_value = "null", help = "Already trained model for genotype classification")]
     pub model: String,
-    #[arg(long = "seed", help = "Seed of the random site sampling (default: $XTEA_SEED if set, otherwise random as the original)")]
+    #[arg(allow_hyphen_values = true, long = "seed", help = "Seed of the random site sampling (default: $XTEA_SEED if set, otherwise random as the original)")]
     pub seed: Option<u64>,
+    /// Positional arguments are accepted and ignored (optparse collects them separately).
+    #[arg(hide = true)]
+    pub extra_args: Vec<String>,
 }
 
 fn req<'a>(o: &'a Option<String>, name: &str) -> Result<&'a str> {
