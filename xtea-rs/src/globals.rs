@@ -289,6 +289,16 @@ pub const N_RANDOM_SITES: i64 = 3000;
 pub const MIN_COV_RANDOM_SITE: f64 = 5.0;
 
 global_f64!(AVE_COVERAGE, average_cov, set_average_cov, 30.0);
+// whether AVE_COVERAGE holds a Python int (the default 30, or the (0, 0, 0, 0) fallback)
+global_bool!(AVE_COVERAGE_IS_INT, average_cov_is_int, set_average_cov_is_int, true);
+/// `str(global_values.AVE_COVERAGE)`
+pub fn average_cov_str() -> String {
+    if average_cov_is_int() {
+        format!("{}", average_cov() as i64)
+    } else {
+        crate::py::fmt::float_repr(average_cov())
+    }
+}
 
 // x_genotype.py
 pub const BWA_HALF_READ_MIN_SCORE: i64 = 45;

@@ -36,6 +36,8 @@ pub struct SampleInfo {
 /// The tuple returned by `get_cov_is_rlth`.
 #[derive(Clone, Copy, Debug)]
 pub struct BasicRcd {
+    /// `f_cov` with its Python type (sum over the BAMs)
+    pub cov_py: PyNum,
     pub cov: f64,
     pub rlth: f64,
     pub mean_is: f64,
@@ -86,9 +88,10 @@ impl XBasicInfo {
         }
         let n = m_info.len();
         if n == 0 {
-            return Ok(BasicRcd { cov: 0.0, rlth: 0.0, mean_is: 0.0, std_var: 0.0, zero: true });
+            return Ok(BasicRcd { cov_py: PyNum::Int(0), cov: 0.0, rlth: 0.0, mean_is: 0.0, std_var: 0.0, zero: true });
         }
         Ok(BasicRcd {
+            cov_py: f_cov,
             cov: f_cov.f(),
             rlth: rlth as f64 / n as f64,
             mean_is: mean_is.f() / n as f64,

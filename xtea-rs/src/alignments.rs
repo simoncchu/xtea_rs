@@ -227,3 +227,111 @@ pub fn load_read_names(sf_names: &str) -> Result<Vec<String>> {
     }
     Ok(v)
 }
+
+/// One record of the "disc_pos" files written by `XClipDisc.collect_clipped_disc_reads_by_region`
+/// as consumed by `BamInfo._parse_read_name_pos_of_region`.
+#[derive(Clone, Debug)]
+struct MateReq {
+    anchor_read_map_pos: i64,
+    s_anchor_rc: String,
+    s_anchor_mate_rc: String,
+    b_lclip: String,
+    b_rclip: String,
+}
+
+impl BamInfo {
+    /// `extract_mate_reads_by_name`: for each discordant anchor listed in `sf_name_pos`, write its
+    /// mate read (by name and first/second flag) found in the BAM into `sf_out_fa`, with the
+    /// header `>name~is_first~lclip~rclip~anchor_rc~anchor_mate_rc~anchor_pos~chrm~pos`.
+    ///
+    /// Like the original, the BAM is scanned bin by bin (bins of `bin_size` over all non-decoy
+    /// chromosomes) and every alignment record of a requested read in a bin is written; bins
+    /// without any requested mate are skipped (they produce no output in the original either).
+    pub fn extract_mate_reads_by_name(&self, sf_name_pos: &str, bin_size: i64, sf_working_folder: &str, n_jobs: usize, sf_out_fa: &str) -> Result<()> {
+        use std::io::Write;
+        let m_chrm_lenth = self.get_all_chrom_name_length()?;
+        let m_bin_pos = crate::reference::break_ref_to_bins(&m_chrm_lenth, bin_size);
+        // parse the name/pos file once: (mate_chrm, mate_pos, s_info, s_insertion_site, req) in file order
+        let mut l_req: Vec<(String, i64, String, String, MateReq)> = Vec::new();
+        for line in utils::read_lines(sf_name_pos)? {
+            let fields = utils::split_ws(&line);
+            if fields.len() < 11 {
+                if fields.is_empty() {
+                    continue;
+                }
+                return Err(anyhow::anyhow!("malformed line in {}: {}", sf_name_pos, line));
+            }
+            let ins_chrm = fields[0];
+            let anchor_read_map_pos = utils::pint(fields[1])?;
+            let mate_chrm = fields[4].to_string();
+            let mate_pos = utils::pint(fields[5])?;
+            let s_insertion_site = format!("{}~{}", ins_chrm, fields[8]);
+            let s_info = format!("{}~{}", fields[6], fields[7]);
+            l_req.push((
+                mate_chrm,
+                mate_pos,
+                s_info,
+                s_insertion_site,
+                MateReq {
+                    anchor_read_map_pos,
+                    s_anchor_rc: fields[2].to_string(),
+                    s_anchor_mate_rc: fields[3].to_string(),
+                    b_lclip: fields[9].to_string(),
+                    b_rclip: fields[10].to_string(),
+                },
+            ));
+        }
+        let mut l_bin_info: Vec<(String, i64, i64)> = Vec::new();
+        for (chrm, bins) in m_bin_pos.iter() {
+            if is_decoy_contig_chrms(chrm) {
+                continue;
+            }
+            for &(s, e) in bins {
+                l_bin_info.push((chrm.clone(), s, e));
+            }
+        }
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(n_jobs.max(1)).build().unwrap();
+        let results: Vec<Result<String>> = pool.install(|| {
+            utils::par_map(l_bin_info.len(), |i| {
+                let (chrm, bin_start, bin_end) = &l_bin_info[i];
+                // _parse_read_name_pos_of_region
+                let mut m_reads: IndexMap<&str, IndexMap<&str, &MateReq>> = IndexMap::new();
+                for (mate_chrm, mate_pos, s_info, s_site, req) in l_req.iter() {
+                    if chrm != mate_chrm {
+                        continue;
+                    }
+                    if *mate_pos < bin_start - 100 || *mate_pos > bin_end + 100 {
+                        continue;
+                    }
+                    m_reads.entry(s_info.as_str()).or_default().insert(s_site.as_str(), req);
+                }
+                let mut out = String::new();
+                if m_reads.is_empty() {
+                    return Ok(out);
+                }
+                let mut bamfile = AlignmentFile::open(&self.sf_bam, &self.sf_reference)?;
+                bamfile.fetch(chrm, *bin_start, *bin_end, |a: &Record| {
+                    let is_first = if a.is_read1() { 1 } else { 0 };
+                    let s_read_id = format!("{}~{}", a.query_name(), is_first);
+                    if let Some(m_sites) = m_reads.get(s_read_id.as_str()) {
+                        let read_seq = a.query_sequence().unwrap_or_default();
+                        for (s_insertion, req) in m_sites.iter() {
+                            out.push_str(&format!(
+                                ">{}~{}~{}~{}~{}~{}~{}\n{}\n",
+                                s_read_id, req.b_lclip, req.b_rclip, req.s_anchor_rc, req.s_anchor_mate_rc, req.anchor_read_map_pos, s_insertion, read_seq
+                            ));
+                        }
+                    }
+                })?;
+                Ok(out)
+            })
+        });
+        let mut fout = utils::create(sf_out_fa)?;
+        for r in results {
+            fout.write_all(r?.as_bytes())?;
+        }
+        fout.flush()?;
+        let _ = sf_working_folder;
+        Ok(())
+    }
+}

@@ -177,3 +177,65 @@ pub fn form_one_side_cluster(m_pos: &mut IndexMap<String, Vec<i64>>, i_is: i64, 
 pub fn pyset_from(values: &[i64]) -> PySet<i64> {
     PySet::from_iter_ordered(values.iter().cloned())
 }
+
+/// `ClusterChecker.find_max_cover` on float positions (Python 3 true division produces
+/// float positions on the consensus, e.g. `reference_start + len(seq) / 2`).
+pub fn find_max_cover_f(l_pos: &[f64], win_size: f64) -> (usize, usize) {
+    let mut i_right: usize = 0;
+    let i_total = l_pos.len();
+    let mut i_cnt: i64 = 0;
+    let mut i_max: i64 = 0;
+    let mut i_start: usize = 0;
+    let mut i_end: usize = 0;
+    for i_left in 0..i_total {
+        let cur_val = l_pos[i_left];
+        if i_right < i_left {
+            i_right = i_left;
+        }
+        for i_temp in i_right..i_total {
+            let right_val = l_pos[i_temp];
+            i_right = i_temp;
+            if right_val - cur_val > win_size {
+                if i_max < i_cnt {
+                    i_max = i_cnt;
+                    i_start = i_left;
+                    i_end = i_right - 1;
+                }
+                break;
+            }
+            i_cnt += 1;
+        }
+        if i_max < i_cnt {
+            i_max = i_cnt;
+            i_start = i_left;
+            i_end = i_right;
+        }
+        i_cnt -= 1;
+        if i_cnt < 0 {
+            i_cnt = 0;
+        }
+        if i_right == i_total - 1 {
+            break;
+        }
+    }
+    (i_start, i_end)
+}
+
+/// `ClusterChecker._is_disc_cluster` on float positions; boundaries keep the float type,
+/// the failure value is the int -1.
+pub fn is_disc_cluster_f(l_pos: &mut Vec<f64>, i_dist: f64, ratio: f64) -> (bool, crate::num::PyNum, crate::num::PyNum) {
+    use crate::num::PyNum;
+    l_pos.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let n_all = l_pos.len();
+    if n_all == 0 {
+        return (false, PyNum::Int(-1), PyNum::Int(-1));
+    }
+    let (i_max_left, i_max_right) = find_max_cover_f(l_pos, i_dist);
+    let peak_win_cnt = i_max_right as i64 - i_max_left as i64;
+    let l_boundary = l_pos[i_max_left];
+    let r_boundary = l_pos[i_max_right];
+    if (peak_win_cnt as f64) / (n_all as f64) < ratio {
+        return (false, PyNum::Int(-1), PyNum::Int(-1));
+    }
+    (true, PyNum::Float(l_boundary), PyNum::Float(r_boundary))
+}
