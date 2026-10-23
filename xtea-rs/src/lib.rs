@@ -24,6 +24,7 @@ pub mod intervaltree;
 pub mod num;
 pub mod orphan_transduction;
 pub mod parameter;
+pub mod pipeline;
 pub mod post_filter;
 pub mod polya;
 pub mod py;
