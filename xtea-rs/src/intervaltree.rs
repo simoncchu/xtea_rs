@@ -32,9 +32,6 @@ impl IvSet {
     fn mask(&self) -> usize {
         self.table.len() - 1
     }
-    fn len(&self) -> usize {
-        self.used as usize
-    }
     fn is_empty(&self) -> bool {
         self.used == 0
     }

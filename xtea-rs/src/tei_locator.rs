@@ -2,7 +2,7 @@
 
 use crate::alignments::{cnt_discordant_pairs, BamInfo};
 use crate::annotation::XAnnotation;
-use crate::bam::{AlignmentFile, PyAln};
+use crate::bam::AlignmentFile;
 use crate::bwa_align::BwAlign;
 use crate::chrom::is_decoy_contig_chrms;
 use crate::clip_read::ClipReadInfo;

@@ -144,6 +144,47 @@ impl AlignmentFile {
         self.names.iter().cloned().zip(self.lengths.iter().cloned()).collect()
     }
 
+    /// `samfile.header.to_dict()['SQ']` with all tags: one (tag, value) list per `@SQ` line.
+    /// Like pysam, falls back to the binary reference list when the header text has no `@SQ`
+    /// lines; `None` when there are no references at all (`'SQ' not in header`).
+    pub fn header_sq_records(&self) -> Option<Vec<Vec<(String, String)>>> {
+        let hv = self.header_view();
+        let text = String::from_utf8_lossy(hv.as_bytes()).into_owned();
+        let mut out = Vec::new();
+        for line in text.split('\n') {
+            let line = line.trim_matches(|c| c == ' ' || c == '\0');
+            let fields: Vec<&str> = line.split('\t').collect();
+            if fields.first() != Some(&"@SQ") {
+                continue;
+            }
+            let mut rec: Vec<(String, String)> = Vec::new();
+            for f in &fields[1..] {
+                if let Some((k, v)) = f.split_once(':') {
+                    let v = if k == "LN" {
+                        v.trim().parse::<i64>().map(|x| x.to_string()).unwrap_or_else(|_| v.to_string())
+                    } else {
+                        v.to_string()
+                    };
+                    match rec.iter().position(|(ek, _)| ek == k) {
+                        Some(p) => rec[p].1 = v,
+                        None => rec.push((k.to_string(), v)),
+                    }
+                }
+            }
+            out.push(rec);
+        }
+        if out.is_empty() {
+            for (n, l) in self.names.iter().zip(self.lengths.iter()) {
+                out.push(vec![("LN".to_string(), l.to_string()), ("SN".to_string(), n.clone())]);
+            }
+        }
+        if out.is_empty() {
+            None
+        } else {
+            Some(out)
+        }
+    }
+
     /// `fetch(contig, start, stop)` calling `f` for each record (pysam semantics).
     pub fn fetch<F: FnMut(&Record)>(&mut self, contig: &str, start: i64, stop: i64, mut f: F) -> Result<()> {
         if start > stop {

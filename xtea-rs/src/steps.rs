@@ -417,20 +417,58 @@ pub fn run_sibling(opts: &Opts, b_automatic: bool, b_tumor: bool, f_purity: f64,
 pub fn run_case_control(_opts: &Opts, _b_automatic: bool, _b_tumor: bool, _n_jobs: usize) -> Result<()> {
     not_ported("--case_control")
 }
-pub fn run_post_filter(_opts: &Opts, _b_tumor: bool, _n_jobs: usize) -> Result<()> {
-    not_ported("--postF")
+/// `--postF`: post filtering of the raw calls.
+pub fn run_post_filter(opts: &Opts, b_tumor: bool, n_jobs: usize) -> Result<()> {
+    let s_working_folder = opts.wfolder.as_str();
+    let sf_xtea_rslt = opts.input.as_str();
+    let sf_rmsk = req(&opts.annotation, "-a")?;
+    let sf_new_out = req(&opts.output, "-o")?;
+    let i_rep_type = opts.rep_type;
+    let sf_black_list = opts.blacklist.as_str();
+    let i_min_copy_len = 225;
+    if opts.post_f_mosaic {
+        return not_ported("--postF --postFmosaic");
+    }
+    let xbasic = crate::basic_info::XBasicInfo::new(s_working_folder, 1, "");
+    let (f_cov, _f_ave_cov) = xbasic.load_get_cov()?;
+    let xpost_filter = crate::post_filter::XPostFilter::new(s_working_folder, n_jobs);
+    xpost_filter.run_post_filtering(sf_xtea_rslt, sf_rmsk, i_min_copy_len, i_rep_type, f_cov, sf_black_list, sf_new_out, b_tumor)
 }
-pub fn run_gntp_classify(_opts: &Opts) -> Result<()> {
-    not_ported("--gntp_classify")
+
+/// `--gntp_classify`: genotype the calls with the DF21 deep-forest model.
+pub fn run_gntp_classify(opts: &Opts) -> Result<()> {
+    if opts.train_gntp {
+        return Err(anyhow!(
+            "--train_gntp is not supported by xtea-rs: training used site lists hard-coded to the original authors' cluster and scikit-learn; train with the Python version"
+        ));
+    }
+    let sf_xtea = opts.input.as_str();
+    let sf_new = req(&opts.output, "-o")?;
+    let mut gc = crate::genotype_classify::GntpClassifierDf21::new();
+    gc.predict_for_site(&opts.model, sf_xtea, sf_new)
 }
-pub fn run_gvcf(_opts: &Opts) -> Result<()> {
-    not_ported("--gVCF")
+
+/// `--gVCF`: convert the final calls to VCF.
+pub fn run_gvcf(opts: &Opts) -> Result<()> {
+    let sf_ref = opts.r#ref.clone().unwrap_or_else(|| "None".to_string());
+    let sf_bam_list = req(&opts.bam, "-b")?;
+    let sf_prefix = req(&opts.output, "-o")?;
+    crate::gvcf::run_gvcf_step(&sf_ref, sf_bam_list, &opts.input, opts.rep_type, sf_prefix)
 }
 pub fn run_joint(_opts: &Opts, _n_jobs: usize) -> Result<()> {
     not_ported("--joint")
 }
-pub fn run_igv(_opts: &Opts, _n_jobs: usize) -> Result<()> {
-    not_ported("--igv")
+/// `--igv`: IGV batch script for screenshots of the given sites.
+pub fn run_igv(opts: &Opts, _n_jobs: usize) -> Result<()> {
+    let mut sf_sites = opts.input.clone();
+    let sf_bam_list = req(&opts.bam, "-b")?;
+    let sf_out = req(&opts.output, "-o")?;
+    let sf_gnm = opts.r#ref.clone().unwrap_or_else(|| "None".to_string());
+    let x_igv = crate::igv::XIgv::new();
+    if opts.single_sample {
+        sf_sites = x_igv.gnrt_sites_single_sample(&sf_sites, sf_bam_list)?;
+    }
+    x_igv.prepare_igv_scripts_multi_bams(&sf_sites, sf_bam_list, &opts.wfolder, opts.extend, &sf_gnm, sf_out)
 }
 pub fn run_collect_10x(_opts: &Opts, _n_jobs: usize) -> Result<()> {
     not_ported("-E")
@@ -438,8 +476,18 @@ pub fn run_collect_10x(_opts: &Opts, _n_jobs: usize) -> Result<()> {
 pub fn run_mutation(_opts: &Opts, _n_jobs: usize) -> Result<()> {
     not_ported("-I")
 }
-pub fn run_gene(_opts: &Opts) -> Result<()> {
-    not_ported("--gene")
+/// `--gene`: annotate the calls with the genes of a GFF3 file.
+pub fn run_gene(opts: &Opts) -> Result<()> {
+    let sf_gene_annotation = req(&opts.annotation, "-a")?;
+    let sf_output = req(&opts.output, "-o")?;
+    let mut gff = crate::gene_annotation::Gff3::new(sf_gene_annotation);
+    let mut iextnd = gv::UP_DOWN_GENE;
+    if opts.extend > iextnd {
+        iextnd = opts.extend;
+    }
+    gff.load_gene_annotation_with_extnd(iextnd)?;
+    gff.index_gene_annotation_interval_tree();
+    gff.annotate_results(&opts.input, sf_output)
 }
 pub fn run_assembly(_opts: &Opts, _n_jobs: usize) -> Result<()> {
     not_ported("-A")

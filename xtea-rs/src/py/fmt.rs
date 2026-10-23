@@ -124,6 +124,42 @@ pub fn pymod(a: i64, b: i64) -> i64 {
     }
 }
 
+/// `repr(str)` as produced by CPython 3 (quote selection and escapes of `unicode_repr`).
+pub fn py_str_repr(s: &str) -> String {
+    let has_sq = s.contains('\'');
+    let has_dq = s.contains('"');
+    let quote = if has_sq && !has_dq { '"' } else { '\'' };
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push(quote);
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '\t' => out.push_str("\\t"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            c if c == quote => {
+                out.push('\\');
+                out.push(c);
+            }
+            c if (c as u32) < 0x20 || c as u32 == 0x7f => out.push_str(&format!("\\x{:02x}", c as u32)),
+            c if (c as u32) < 0x7f => out.push(c),
+            c if c.is_control() => {
+                let v = c as u32;
+                if v <= 0xff {
+                    out.push_str(&format!("\\x{:02x}", v));
+                } else if v <= 0xffff {
+                    out.push_str(&format!("\\u{:04x}", v));
+                } else {
+                    out.push_str(&format!("\\U{:08x}", v));
+                }
+            }
+            c => out.push(c),
+        }
+    }
+    out.push(quote);
+    out
+}
+
 /// Python `float(s)` parser for the subset of inputs xTea produces (accepts surrounding spaces,
 /// `inf`, `nan`).
 pub fn parse_py_float(s: &str) -> Option<f64> {
@@ -148,6 +184,15 @@ pub fn parse_py_int(s: &str) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn str_repr_matches_python() {
+        assert_eq!(py_str_repr("abc"), "'abc'");
+        assert_eq!(py_str_repr("a'b"), "\"a'b\"");
+        assert_eq!(py_str_repr("a'b\""), "'a\\'b\"'");
+        assert_eq!(py_str_repr("x\ty\n"), "'x\\ty\\n'");
+        assert_eq!(py_str_repr("\x01\\"), "'\\x01\\\\'");
+    }
 
     #[test]
     fn repr_matches_python() {

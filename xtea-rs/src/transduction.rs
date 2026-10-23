@@ -998,19 +998,12 @@ impl XTransduction {
             let e = m_site_info.entry(ins_chrm.clone()).or_default();
             for (&ins_pos, td) in m.iter() {
                 let (mut n_l_disc, mut lcns_start, mut lcns_end, mut n_r_disc, mut rcns_start, mut rcns_end) =
-                    (0i64, PyNum::Int(-1), PyNum::Int(-1), 0i64, PyNum::Int(-1), PyNum::Int(-1));
-                if let Some(d) = site_get(m_disc_cns, ins_chrm, ins_pos) {
-                    n_l_disc = d.n_l_disc;
-                    lcns_start = d.lcns_start;
-                    lcns_end = d.lcns_end;
-                    n_r_disc = d.n_r_disc;
-                    rcns_start = d.rcns_start;
-                    rcns_end = d.rcns_end;
-                } else {
-                    let o = site_get(m_orphan, ins_chrm, ins_pos).ok_or_else(|| anyhow!("KeyError: {}:{}", ins_chrm, ins_pos))?;
-                    n_l_disc = o.1;
-                    n_r_disc = o.2;
-                }
+                    if let Some(d) = site_get(m_disc_cns, ins_chrm, ins_pos) {
+                        (d.n_l_disc, d.lcns_start, d.lcns_end, d.n_r_disc, d.rcns_start, d.rcns_end)
+                    } else {
+                        let o = site_get(m_orphan, ins_chrm, ins_pos).ok_or_else(|| anyhow!("KeyError: {}:{}", ins_chrm, ins_pos))?;
+                        (o.1, PyNum::Int(-1), PyNum::Int(-1), o.2, PyNum::Int(-1), PyNum::Int(-1))
+                    };
                 if td.b_l && !td.b_r {
                     n_l_disc = td.n_disc;
                     lcns_start = PyNum::Int(-1);

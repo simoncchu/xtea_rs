@@ -126,6 +126,9 @@ impl XBasicInfo {
             f_cov += v.cov.f();
         }
         let n = m.len();
+        if n == 0 {
+            return Err(anyhow::anyhow!("float division by zero"));
+        }
         Ok((f_cov, f_cov / n as f64))
     }
 
