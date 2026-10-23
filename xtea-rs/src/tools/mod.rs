@@ -88,92 +88,6 @@ pub fn first_key_in_window(keys: &BTreeSet<i64>, center: i64, ext: i64) -> Optio
     keys.range((lower, upper)).next().copied()
 }
 
-/// Rewrite argv so that clap sees the values optparse sees.  optparse takes the rest of a
-/// short-option cluster verbatim as the option's value ("-p=out" gives "=out", "-Sy=7" gives
-/// -S and "=7"), while clap drops a leading "="; such attached values are moved into their own
-/// argument, which clap then takes unchanged (the options allow hyphen values).  Arguments
-/// that optparse consumes as option values, and everything after "--", are left alone.  The
-/// option table is taken from the clap definition of `T`, and long options are resolved by
-/// unique prefix like optparse does.
-pub fn optparse_compatible_argv<T: clap::CommandFactory>(args: Vec<std::ffi::OsString>) -> Vec<std::ffi::OsString> {
-    use std::ffi::OsString;
-    let cmd = T::command();
-    // (short, long, takes a value); optparse's -h/--help is a flag
-    let mut specs: Vec<(Option<char>, Option<String>, bool)> = vec![(Some('h'), Some("help".to_string()), false)];
-    for a in cmd.get_arguments() {
-        if a.get_short().is_none() && a.get_long().is_none() {
-            continue; // positional
-        }
-        specs.push((a.get_short(), a.get_long().map(|s| s.to_string()), a.get_action().takes_values()));
-    }
-    let long_takes_value = |body: &str| -> bool {
-        if let Some(s) = specs.iter().find(|s| s.1.as_deref() == Some(body)) {
-            return s.2;
-        }
-        let cands: Vec<&(Option<char>, Option<String>, bool)> = specs.iter().filter(|s| s.1.as_deref().is_some_and(|l| l.starts_with(body))).collect();
-        cands.len() == 1 && cands[0].2
-    };
-
-    let mut out: Vec<OsString> = Vec::with_capacity(args.len() + 2);
-    let mut iter = args.into_iter();
-    if let Some(prog) = iter.next() {
-        out.push(prog);
-    }
-    let mut value_next = false;
-    let mut positional_only = false;
-    for a in iter {
-        if positional_only || value_next {
-            value_next = false;
-            out.push(a);
-            continue;
-        }
-        let s = match a.to_str() {
-            Some(s) => s.to_string(),
-            None => {
-                out.push(a);
-                continue;
-            }
-        };
-        if s == "--" {
-            positional_only = true;
-        } else if let Some(body) = s.strip_prefix("--") {
-            value_next = !body.contains('=') && long_takes_value(body);
-        } else if s.len() > 1 && s.starts_with('-') {
-            let body = &s[1..];
-            for (i, c) in body.char_indices() {
-                match specs.iter().find(|sp| sp.0 == Some(c)) {
-                    Some(sp) if sp.2 => {
-                        let k = 1 + i + c.len_utf8();
-                        if k == s.len() {
-                            value_next = true;
-                        } else if s[k..].starts_with('=') {
-                            out.push(OsString::from(&s[..k]));
-                            out.push(OsString::from(&s[k..]));
-                            break;
-                        }
-                        out.push(a.clone());
-                        break;
-                    }
-                    Some(_) if i + c.len_utf8() < body.len() => continue, // a flag inside the cluster
-                    _ => {
-                        out.push(a.clone()); // last flag, or an unknown option (clap reports it)
-                        break;
-                    }
-                }
-            }
-            continue;
-        }
-        out.push(a);
-    }
-    out
-}
-
-/// `T::parse_from` on the process arguments made optparse-compatible
-/// ([`optparse_compatible_argv`]).
-pub fn parse_optparse_args<T: clap::Parser>() -> T {
-    T::parse_from(optparse_compatible_argv::<T>(std::env::args_os().collect()))
-}
-
 /// Python `open(path, "w")`.
 pub fn create_file<P: AsRef<Path>>(path: P) -> Result<BufWriter<File>> {
     let p = path.as_ref();
@@ -232,32 +146,5 @@ mod tests {
         assert_eq!(first_key_in_window(&big, -1, i64::MAX), Some(i64::MIN));
     }
 
-    #[test]
-    fn optparse_argv_normalisation() {
-        use clap::Parser;
-        use vcf_merger::Opts;
-        let norm = |v: &[&str]| -> Vec<String> {
-            let a: Vec<std::ffi::OsString> = std::iter::once("prog").chain(v.iter().copied()).map(Into::into).collect();
-            optparse_compatible_argv::<Opts>(a).into_iter().skip(1).map(|s| s.into_string().unwrap()).collect()
-        };
-        assert_eq!(norm(&["-p=out"]), ["-p", "=out"]);
-        assert_eq!(norm(&["-Sy=7", "-x", "l"]), ["-Sy", "=7", "-x", "l"]);
-        assert_eq!(norm(&["-SPp=x"]), ["-SPp", "=x"]);
-        assert_eq!(norm(&["-pout", "-Sw5"]), ["-pout", "-Sw5"]);
-        // values consumed by the previous option, unknown options and "--" are left alone
-        assert_eq!(norm(&["-i", "-p=x"]), ["-i", "-p=x"]);
-        assert_eq!(norm(&["--rep", "-y=3"]), ["--rep", "-y=3"]);
-        assert_eq!(norm(&["--path=-p=x", "-w=1"]), ["--path=-p=x", "-w", "=1"]);
-        assert_eq!(norm(&["--", "-p=x"]), ["--", "-p=x"]);
-        assert_eq!(norm(&["-Zp=x"]), ["-Zp=x"]);
-        assert_eq!(norm(&["--sample", "-p=x"]), ["--sample", "-p", "=x"]);
-        assert_eq!(norm(&["--re", "-p=x"]), ["--re", "-p", "=x"]); // ambiguous prefix: not a value-taking option
-        assert_eq!(norm(&["-p"]), ["-p"]);
-        // and clap then sees optparse's values
-        let o = Opts::try_parse_from(optparse_compatible_argv::<Opts>(["prog", "-S", "-p=out", "-i", "-x"].iter().map(Into::into).collect())).unwrap();
-        assert_eq!(o.wfolder.as_deref(), Some("=out"));
-        assert_eq!(o.sample_info.as_deref(), Some("-x"));
-        assert!(Opts::try_parse_from(optparse_compatible_argv::<Opts>(["prog", "-y=7"].iter().map(Into::into).collect())).is_err());
-    }
 
 }

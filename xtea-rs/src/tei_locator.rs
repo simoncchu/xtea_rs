@@ -423,7 +423,7 @@ impl TeLocator {
             let initial = gv::initial_min_clip_cutoff();
             println!("Initial minimum clip cutoff is {}", initial);
             clip_info.collect_clip_positions(sf_annotation, initial, b_se, &sf_pub_folder)?;
-            println!("Output info: Collect clipped parts for file  {}", self.sf_bam);
+            println!("({}, {})", crate::py::fmt::py_str_repr("Output info: Collect clipped parts for file "), crate::py::fmt::py_str_repr(&self.sf_bam));
             let sf_all_clip_fq_ori = format!("{}{}{}", sf_clip_working_folder, sf_bam_name, gv::CLIP_FQ_SUFFIX);
             clip_info.collect_clipped_parts(&sf_all_clip_fq_ori)?;
             if utils::is_file(&sf_all_clip_fq) || utils::is_link(&sf_all_clip_fq) {
@@ -434,7 +434,7 @@ impl TeLocator {
             println!("Collected clipped reads file {} already exist!", sf_all_clip_fq);
         }
         let sf_algnmt = format!("{}{}{}", self.working_folder, sf_bam_name, gv::CLIP_BAM_SUFFIX);
-        println!("Output info: Re-align clipped parts for file  {}", self.sf_bam);
+        println!("({}, {})", crate::py::fmt::py_str_repr("Output info: Re-align clipped parts for file "), crate::py::fmt::py_str_repr(&self.sf_bam));
         let bwa = BwAlign::new(gv::BWA_PATH, gv::BWA_REALIGN_CUTOFF, self.n_jobs as i64);
         bwa.two_stage_realign(sf_rep_cns, sf_ref, &sf_all_clip_fq, &sf_algnmt)?;
         clip_info.cnt_clip_part_aligned_to_rep(&sf_algnmt)?;
@@ -481,7 +481,7 @@ impl TeLocator {
         let initial = gv::initial_min_clip_cutoff();
         println!("Initial minimum clip cutoff is {}", initial);
         clip_info.collect_clip_positions(sf_annotation, initial, b_se, &sf_pub_folder)?;
-        println!("Output info: Collect clipped parts for file  {}", self.sf_bam);
+        println!("({}, {})", crate::py::fmt::py_str_repr("Output info: Collect clipped parts for file "), crate::py::fmt::py_str_repr(&self.sf_bam));
         let sf_all_clip_fq_ori = format!("{}{}{}", sf_clip_working_folder, sf_bam_name, gv::CLIP_FQ_SUFFIX);
         clip_info.collect_clipped_parts(&sf_all_clip_fq_ori)?;
         if utils::is_file(&sf_all_clip_fq) {
@@ -489,7 +489,7 @@ impl TeLocator {
         }
         utils::run_cmd_small_output(&format!("ln -s {} {}", sf_all_clip_fq_ori, sf_all_clip_fq));
         let sf_algnmt = format!("{}{}{}", self.working_folder, sf_bam_name, gv::CLIP_BAM_SUFFIX);
-        println!("Output info: Re-align clipped parts for file  {}", self.sf_bam);
+        println!("({}, {})", crate::py::fmt::py_str_repr("Output info: Re-align clipped parts for file "), crate::py::fmt::py_str_repr(&self.sf_bam));
         let bwa = BwAlign::new(gv::BWA_PATH, gv::BWA_REALIGN_CUTOFF, self.n_jobs as i64);
         bwa.two_stage_realign(sf_rep_cns, sf_ref, &sf_all_clip_fq, &sf_algnmt)?;
         clip_info.cnt_clip_part_aligned_to_rep_mosaic(&sf_algnmt)?;
@@ -515,11 +515,11 @@ impl TeLocator {
         }
         let mut clip_info = ClipReadInfo::new(&self.sf_bam, self.n_jobs, &self.sf_reference);
         clip_info.set_working_folder(&wf);
-        println!("Output info: Collect clip positions for file  {}", self.sf_bam);
+        println!("({}, {})", crate::py::fmt::py_str_repr("Output info: Collect clip positions for file "), crate::py::fmt::py_str_repr(&self.sf_bam));
         clip_info.collect_clip_positions(sf_annotation, 2, b_se, wfolder_pub_clip)?;
         let sf_bam_name = utils::basename(&self.sf_bam);
         let sf_all_clip_fq = format!("{}{}{}", wf, sf_bam_name, gv::CLIP_FQ_SUFFIX);
-        println!("Output info: Collect clipped parts for file  {}", self.sf_bam);
+        println!("({}, {})", crate::py::fmt::py_str_repr("Output info: Collect clipped parts for file "), crate::py::fmt::py_str_repr(&self.sf_bam));
         clip_info.collect_clipped_parts(&sf_all_clip_fq)?;
         Ok(())
     }

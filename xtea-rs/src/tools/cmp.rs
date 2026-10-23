@@ -40,9 +40,12 @@ pub const TP_SUFFIX: &str = ".true_positive";
     name = "xtea_cmp",
     about = "Compare TE insertion calls against a benchmark (Rust port of x_cmp.py)",
     infer_long_args = true,
-    args_override_self = true
+    args_override_self = true,
+    disable_help_flag = true
 )]
 pub struct Opts {
+    #[arg(short = 'h', long = "help", help = "show this help message and exit")]
+    pub help: bool,
     #[arg(short = 'L', help = "Input is a list of results")]
     pub bgroup: bool,
     #[arg(allow_hyphen_values = true, short = 'i', long = "input", value_name = "FILE", help = "Input file")]

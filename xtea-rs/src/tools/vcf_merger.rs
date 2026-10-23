@@ -38,9 +38,12 @@ use std::io::Write;
     name = "xtea_vcf_merger",
     about = "Merge the VCFs (different repeat types) of each sample, or the samples of a population (Rust port of x_vcf_merger.py)",
     infer_long_args = true,
-    args_override_self = true
+    args_override_self = true,
+    disable_help_flag = true
 )]
 pub struct Opts {
+    #[arg(short = 'h', long = "help", help = "show this help message and exit")]
+    pub help: bool,
     #[arg(short = 'S', long = "sample", help = "Merge VCFs (different repeats) of each sample")]
     pub sample_merge: bool,
     #[arg(short = 'P', long = "population", help = "Merge VCFs (different repeats) of each sample")]

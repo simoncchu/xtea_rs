@@ -255,7 +255,45 @@ pub fn set_globals_from_basic(rcd: &BasicRcd, max_is: i64) {
     gv::set_average_cov_is_int(matches!(rcd.cov_py, PyNum::Int(_)));
 }
 
+/// Which entry point is running: `x_TEA_main.py`, or `x_TEA_main_germline_cloud.py` (which
+/// differs in `--gntp_feature`, `--gVCF`, `--gene`, has no `--igv` mode and takes a sample id).
+#[derive(Clone, Debug)]
+pub enum MainVariant {
+    Local,
+    GermlineCloud { sample_id: String },
+}
+
+/// Command line of `xtea_main_germline_cloud` (port of `x_TEA_main_germline_cloud.py`): the
+/// options of `x_TEA_main.py` plus `--hard` and `--id`.
+#[derive(Parser, Debug, Clone, Default)]
+#[command(
+    name = "xtea_main_germline_cloud",
+    about = "xTea germline calling for the cloud workflow (Rust re-implementation of x_TEA_main_germline_cloud.py)",
+    infer_long_args = true,
+    args_override_self = true,
+    disable_help_flag = true
+)]
+pub struct CloudOpts {
+    #[command(flatten)]
+    pub base: Opts,
+    #[arg(long = "hard", help = "This is hard-cut for fitering out coverage abnormal candidates")]
+    pub hard: bool,
+    #[arg(allow_hyphen_values = true, long = "id", default_value = "sampleID", value_name = "SAMPLE_ID", help = "Sample ID")]
+    pub sample_id: String,
+}
+
+/// `x_TEA_main.py`
 pub fn run(opts: Opts) -> Result<()> {
+    run_variant(opts, &MainVariant::Local)
+}
+
+/// `x_TEA_main_germline_cloud.py`
+pub fn run_cloud(opts: CloudOpts) -> Result<()> {
+    run_variant(opts.base, &MainVariant::GermlineCloud { sample_id: opts.sample_id })
+}
+
+pub fn run_variant(opts: Opts, variant: &MainVariant) -> Result<()> {
+    let cloud = matches!(variant, MainVariant::GermlineCloud { .. });
     crate::rng::set_seed(opts.seed);
     if opts.mit {
         gv::turn_on_mit();
@@ -331,22 +369,36 @@ pub fn run(opts: Opts) -> Result<()> {
         let sf_bam_list = req(&opts.bam, "-b")?;
         let sf_ref = req(&opts.r#ref, "--ref")?;
         let sf_output = req(&opts.output, "-o")?;
+        let extnd = if cloud {
+            // the cloud version sizes the region from the estimated insert size
+            let (_rcd, basic_rcd) = automatic_gnrt_parameters(sf_bam_list, sf_ref, &opts.wfolder, n_jobs, false, b_tumor, f_purity)?;
+            let rlth = basic_rcd.rlth;
+            let mean_is = basic_rcd.mean_is;
+            gv::set_insert_size(crate::py::fmt::py_int(mean_is) as f64);
+            let std_var = basic_rcd.std_var;
+            crate::py::fmt::py_int(mean_is + 3.0 * std_var) + crate::py::fmt::py_int(rlth)
+        } else {
+            450
+        };
         let x_gntper = crate::genotype_feature::XGenotyper::new(sf_ref, &opts.wfolder, n_jobs);
-        x_gntper.call_genotype(sf_bam_list, &opts.input, 450, sf_output)?;
+        x_gntper.call_genotype(sf_bam_list, &opts.input, extnd, sf_output)?;
     } else if opts.gntp_classify {
         crate::steps::run_gntp_classify(&opts)?;
     } else if opts.g_vcf {
-        crate::steps::run_gvcf(&opts)?;
+        match variant {
+            MainVariant::GermlineCloud { sample_id } => crate::steps::run_gvcf_with_sample_id(&opts, Some(sample_id))?,
+            MainVariant::Local => crate::steps::run_gvcf(&opts)?,
+        }
     } else if opts.joint {
         crate::steps::run_joint(&opts, n_jobs)?;
-    } else if opts.igv {
+    } else if opts.igv && !cloud {
         crate::steps::run_igv(&opts, n_jobs)?;
     } else if opts.collect {
         crate::steps::run_collect_10x(&opts, n_jobs)?;
     } else if opts.mutation {
         crate::steps::run_mutation(&opts, n_jobs)?;
     } else if opts.gene {
-        crate::steps::run_gene(&opts)?;
+        crate::steps::run_gene_variant(&opts, !cloud)?;
     } else if opts.collect_illumina {
         // nothing to do (as in the original)
     } else if opts.assembly {

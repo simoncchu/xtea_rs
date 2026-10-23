@@ -9,7 +9,8 @@ use std::process::{Command, Stdio};
 /// `CMD_RUNNER.run_cmd_small_output`: print and run a shell command, capturing stdout.
 pub fn run_cmd_small_output(cmd: &str) {
     println!("Running command: {}\n", cmd);
-    let _ = Command::new("sh").arg("-c").arg(cmd).stdout(Stdio::piped()).output();
+    let _ = std::io::stdout().flush();
+    let _ = Command::new("sh").arg("-c").arg(cmd).stdout(Stdio::piped()).stderr(Stdio::inherit()).output();
 }
 
 /// `CMD_RUNNER.run_cmd_to_file`: run a shell command writing stdout into `sf_out`.
@@ -26,7 +27,8 @@ pub fn run_cmd_to_file(cmd: &str, sf_out: &str) {
 
 /// `Popen(cmd, shell=True, stdout=PIPE).communicate()` without printing.
 pub fn run_cmd_quiet(cmd: &str) -> String {
-    match Command::new("sh").arg("-c").arg(cmd).stdout(Stdio::piped()).output() {
+    let _ = std::io::stdout().flush();
+    match Command::new("sh").arg("-c").arg(cmd).stdout(Stdio::piped()).stderr(Stdio::inherit()).output() {
         Ok(o) => String::from_utf8_lossy(&o.stdout).into_owned(),
         Err(_) => String::new(),
     }
@@ -35,7 +37,8 @@ pub fn run_cmd_quiet(cmd: &str) -> String {
 /// `print(cmd); Popen(cmd, shell=True, stdout=PIPE).communicate()` (pipeline generators).
 pub fn run_cmd_print(cmd: &str) {
     println!("{}", cmd);
-    let _ = Command::new("sh").arg("-c").arg(cmd).stdout(Stdio::piped()).output();
+    let _ = std::io::stdout().flush();
+    let _ = Command::new("sh").arg("-c").arg(cmd).stdout(Stdio::piped()).stderr(Stdio::inherit()).output();
 }
 
 /// os.path.isfile

@@ -359,18 +359,22 @@ impl GVcf {
 
 /// The `--gVCF` step of `x_TEA_main.py`: sample id from the first BAM of the list, output
 /// `<prefix>/<sample>_<type>.vcf`.
-pub fn run_gvcf_step(sf_ref: &str, sf_bam_list: &str, sf_raw_rslt: &str, i_rep_type: i64, sf_prefix: &str) -> Result<()> {
+/// `fixed_sample_id`: the cloud entry point's `--id` (otherwise the id is the BAM file name
+/// without its extension).
+pub fn run_gvcf_step(sf_ref: &str, sf_bam_list: &str, sf_raw_rslt: &str, i_rep_type: i64, sf_prefix: &str, fixed_sample_id: Option<&str>) -> Result<()> {
     let mut sf_bam = String::new();
-    let mut s_sample_id = "null".to_string();
+    let mut s_sample_id = fixed_sample_id.unwrap_or("null").to_string();
     for line in utils::read_raw_lines(sf_bam_list)? {
         let fields = split_ws(&line);
         if fields.is_empty() {
             break;
         }
         sf_bam = fields[0].to_string();
-        let s_sample_id2 = sf_bam.rsplit('/').next().unwrap_or("").to_string();
-        let tmp: Vec<&str> = s_sample_id2.split('.').collect();
-        s_sample_id = tmp[..tmp.len() - 1].join(".");
+        if fixed_sample_id.is_none() {
+            let s_sample_id2 = sf_bam.rsplit('/').next().unwrap_or("").to_string();
+            let tmp: Vec<&str> = s_sample_id2.split('.').collect();
+            s_sample_id = tmp[..tmp.len() - 1].join(".");
+        }
         break;
     }
     if utils::is_file(&sf_bam) {

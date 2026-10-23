@@ -503,10 +503,15 @@ pub fn run_gntp_classify(opts: &Opts) -> Result<()> {
 
 /// `--gVCF`: convert the final calls to VCF.
 pub fn run_gvcf(opts: &Opts) -> Result<()> {
+    run_gvcf_with_sample_id(opts, None)
+}
+
+/// `--gVCF`; the cloud entry point takes the sample id from `--id` instead of the BAM name.
+pub fn run_gvcf_with_sample_id(opts: &Opts, sample_id: Option<&str>) -> Result<()> {
     let sf_ref = opts.r#ref.clone().unwrap_or_else(|| "None".to_string());
     let sf_bam_list = req(&opts.bam, "-b")?;
     let sf_prefix = req(&opts.output, "-o")?;
-    crate::gvcf::run_gvcf_step(&sf_ref, sf_bam_list, &opts.input, opts.rep_type, sf_prefix)
+    crate::gvcf::run_gvcf_step(&sf_ref, sf_bam_list, &opts.input, opts.rep_type, sf_prefix, sample_id)
 }
 /// `--joint` (with `--postFmosaic`): keep the mosaic calls seen in a single sample.
 pub fn run_joint(opts: &Opts, n_jobs: usize) -> Result<()> {
@@ -538,11 +543,16 @@ pub fn run_mutation(_opts: &Opts, _n_jobs: usize) -> Result<()> {
 }
 /// `--gene`: annotate the calls with the genes of a GFF3 file.
 pub fn run_gene(opts: &Opts) -> Result<()> {
+    run_gene_variant(opts, true)
+}
+
+/// `--gene`; the cloud entry point ignores `-e` (`b_user_extend` false).
+pub fn run_gene_variant(opts: &Opts, b_user_extend: bool) -> Result<()> {
     let sf_gene_annotation = req(&opts.annotation, "-a")?;
     let sf_output = req(&opts.output, "-o")?;
     let mut gff = crate::gene_annotation::Gff3::new(sf_gene_annotation);
     let mut iextnd = gv::UP_DOWN_GENE;
-    if opts.extend > iextnd {
+    if b_user_extend && opts.extend > iextnd {
         iextnd = opts.extend;
     }
     gff.load_gene_annotation_with_extnd(iextnd)?;

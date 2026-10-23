@@ -74,11 +74,12 @@ use std::path::Path;
 /// The long option (name, takes a value) and the short options of a clap command, in definition
 /// order.  The generators define their own `-h/--help` flag (clap's is disabled) so that clap's
 /// prefix matching sees it, as optparse's does (`--h` is ambiguous with `--hard`).
-fn option_specs(cmd: &clap::Command) -> (Vec<(String, bool)>, Vec<(char, usize)>) {
+fn option_specs(cmd: &clap::Command) -> (Vec<(String, bool)>, Vec<(char, usize)>, Vec<(char, bool)>) {
     let mut cmd = cmd.clone();
     cmd.build();
     let mut specs = Vec::new();
     let mut shorts = Vec::new();
+    let mut short_only = Vec::new();
     for a in cmd.get_arguments() {
         if a.is_positional() {
             continue;
@@ -88,9 +89,11 @@ fn option_specs(cmd: &clap::Command) -> (Vec<(String, bool)>, Vec<(char, usize)>
                 shorts.push((s, specs.len()));
             }
             specs.push((long.to_string(), a.get_action().takes_values()));
+        } else if let Some(s) = a.get_short() {
+            short_only.push((s, a.get_action().takes_values()));
         }
     }
-    (specs, shorts)
+    (specs, shorts, short_only)
 }
 
 /// optparse's `_match_abbrev`: exact match, else the unique option starting with `name`.
@@ -112,6 +115,24 @@ pub struct OptparseArgv {
     /// `-h/--help` was reached: optparse prints the help and exits at that point, ignoring the
     /// rest of the command line (`argv` then holds the arguments before it)
     pub help: bool,
+    /// the message of the first usage error optparse would report (unknown or ambiguous
+    /// option, missing value, value given to a flag)
+    pub error: Option<String>,
+    /// how each value-taking option was first spelled on the command line ("-n" or "--cores"),
+    /// keyed by its long name, for optparse's "option -n: invalid ... value" messages
+    pub spelled: std::collections::HashMap<String, String>,
+}
+
+/// optparse's `_match_abbrev` failure message for a long option.
+fn long_option_error(specs: &[(String, bool)], name: &str) -> String {
+    let mut poss: Vec<&str> = specs.iter().filter(|s| s.0.starts_with(name)).map(|s| s.0.as_str()).collect();
+    if poss.is_empty() {
+        format!("no such option: --{}", name)
+    } else {
+        poss.sort();
+        let l: Vec<String> = poss.iter().map(|p| format!("--{}", p)).collect();
+        format!("ambiguous option: --{} ({}?)", name, l.join(", "))
+    }
 }
 
 /// Re-spell a command line the way optparse reads it, so that clap produces the values optparse
@@ -123,7 +144,7 @@ pub struct OptparseArgv {
 /// ambiguous option, missing value, value given to a flag) the rest is passed through unchanged
 /// for clap to report.
 pub fn optparse_argv(cmd: &clap::Command, argv: Vec<OsString>) -> OptparseArgv {
-    let (specs, shorts) = option_specs(cmd);
+    let (specs, shorts, short_only) = option_specs(cmd);
     let mut it = argv.into_iter();
     let mut out: Vec<OsString> = it.next().into_iter().collect();
     let rest: Vec<OsString> = it.collect();
@@ -131,19 +152,24 @@ pub fn optparse_argv(cmd: &clap::Command, argv: Vec<OsString>) -> OptparseArgv {
         Some(v) => v,
         None => {
             out.extend(rest);
-            return OptparseArgv { argv: out, help: false };
+            return OptparseArgv { argv: out, help: false, error: None, spelled: Default::default() };
         }
     };
-    let done = |mut out: Vec<OsString>, from: &[String]| {
+    let mut spelled: std::collections::HashMap<String, String> = Default::default();
+    let done = |mut out: Vec<OsString>, from: &[String], spelled: std::collections::HashMap<String, String>| {
         out.extend(from.iter().map(OsString::from));
-        OptparseArgv { argv: out, help: false }
+        OptparseArgv { argv: out, help: false, error: None, spelled }
     };
-    let help = |out: Vec<OsString>| OptparseArgv { argv: out, help: true };
+    let fail = |mut out: Vec<OsString>, from: &[String], msg: String| {
+        out.extend(from.iter().map(OsString::from));
+        OptparseArgv { argv: out, help: false, error: Some(msg), spelled: Default::default() }
+    };
+    let help = |out: Vec<OsString>| OptparseArgv { argv: out, help: true, error: None, spelled: Default::default() };
     let mut i = 0;
     while i < args.len() {
         let arg = &args[i];
         if arg == "--" {
-            return done(out, &args[i..]);
+            return done(out, &args[i..], spelled);
         } else if let Some(body) = arg.strip_prefix("--") {
             let (name, explicit) = match body.find('=') {
                 Some(p) => (&body[..p], Some(&body[p + 1..])),
@@ -157,8 +183,9 @@ pub fn optparse_argv(cmd: &clap::Command, argv: Vec<OsString>) -> OptparseArgv {
                             i += 1;
                             args[i].clone()
                         }
-                        None => return done(out, &args[i..]),
+                        None => return fail(out, &args[i..], format!("--{} option requires 1 argument", long)),
                     };
+                    spelled.entry(long.clone()).or_insert_with(|| format!("--{}", long));
                     out.push(format!("--{}={}", long, value).into());
                 }
                 Some((long, false)) if explicit.is_none() => {
@@ -167,7 +194,13 @@ pub fn optparse_argv(cmd: &clap::Command, argv: Vec<OsString>) -> OptparseArgv {
                     }
                     out.push(format!("--{}", long).into());
                 }
-                _ => return done(out, &args[i..]),
+                Some((long, false)) => {
+                    return fail(out, &args[i..], format!("--{} option does not take a value", long));
+                }
+                None => {
+                    let msg = long_option_error(&specs, name);
+                    return fail(out, &args[i..], msg);
+                }
             }
         } else if arg.len() > 1 && arg.starts_with('-') {
             let chars: Vec<char> = arg[1..].chars().collect();
@@ -175,10 +208,34 @@ pub fn optparse_argv(cmd: &clap::Command, argv: Vec<OsString>) -> OptparseArgv {
             while j < chars.len() {
                 let (long, takes_value) = match shorts.iter().find(|(c, _)| *c == chars[j]) {
                     Some(&(_, idx)) => &specs[idx],
-                    None => {
-                        out.push(format!("-{}", chars[j..].iter().collect::<String>()).into());
-                        return done(out, &args[i + 1..]);
-                    }
+                    None => match short_only.iter().find(|(c, _)| *c == chars[j]) {
+                        // an option without a long name: passed on as "-c" (and its value as a
+                        // separate argument, which clap takes verbatim)
+                        Some(&(c, so_takes_value)) => {
+                            if so_takes_value {
+                                let value = if j + 1 < chars.len() {
+                                    chars[j + 1..].iter().collect::<String>()
+                                } else if i + 1 < args.len() {
+                                    i += 1;
+                                    args[i].clone()
+                                } else {
+                                    out.push(format!("-{}", c).into());
+                                    return fail(out, &[], format!("-{} option requires 1 argument", c));
+                                };
+                                spelled.entry(c.to_string()).or_insert_with(|| format!("-{}", c));
+                                out.push(format!("-{}", c).into());
+                                out.push(value.into());
+                                break;
+                            }
+                            out.push(format!("-{}", c).into());
+                            j += 1;
+                            continue;
+                        }
+                        None => {
+                            out.push(format!("-{}", chars[j..].iter().collect::<String>()).into());
+                            return fail(out, &args[i + 1..], format!("no such option: -{}", chars[j]));
+                        }
+                    },
                 };
                 if *takes_value {
                     let value = if j + 1 < chars.len() {
@@ -188,8 +245,9 @@ pub fn optparse_argv(cmd: &clap::Command, argv: Vec<OsString>) -> OptparseArgv {
                         args[i].clone()
                     } else {
                         out.push(format!("-{}", chars[j]).into());
-                        return done(out, &[]);
+                        return fail(out, &[], format!("-{} option requires 1 argument", chars[j]));
                     };
+                    spelled.entry(long.clone()).or_insert_with(|| format!("-{}", chars[j]));
                     out.push(format!("--{}={}", long, value).into());
                     break;
                 }
@@ -204,7 +262,14 @@ pub fn optparse_argv(cmd: &clap::Command, argv: Vec<OsString>) -> OptparseArgv {
         }
         i += 1;
     }
-    OptparseArgv { argv: out, help: false }
+    OptparseArgv { argv: out, help: false, error: None, spelled }
+}
+
+/// optparse's `parser.error(msg)`: usage line and message on stderr, exit status 2.
+fn optparse_exit(prog: &str, msg: &str) -> ! {
+    let _ = std::io::stdout().flush();
+    eprint!("Usage: {} [options]\n\n{}: error: {}\n", prog, prog, msg);
+    std::process::exit(2);
 }
 
 /// Parse the process arguments with optparse semantics (see [`optparse_argv`]): usage errors
@@ -218,7 +283,29 @@ pub fn parse_opts<T: clap::Parser>(name: &'static str) -> T {
         .map(|a| Path::new(a).file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default())
         .unwrap_or_else(|| name.to_string());
     let parsed = optparse_argv(&cmd, argv);
-    let matches = cmd.clone().try_get_matches_from(parsed.argv).unwrap_or_else(|e| e.exit());
+    if let Some(msg) = &parsed.error {
+        optparse_exit(&prog, msg);
+    }
+    let spelled = parsed.spelled.clone();
+    let matches = match cmd.clone().try_get_matches_from(parsed.argv) {
+        Ok(m) => m,
+        Err(e) => {
+            use clap::error::{ContextKind, ContextValue, ErrorKind};
+            if matches!(e.kind(), ErrorKind::ValueValidation | ErrorKind::InvalidValue) {
+                // "option --cores: invalid integer value: '08'"
+                let opt = match e.get(ContextKind::InvalidArg) {
+                    Some(ContextValue::String(a)) => a.split_whitespace().next().unwrap_or("").to_string(),
+                    _ => String::new(),
+                };
+                let opt = spelled.get(opt.trim_start_matches('-')).cloned().unwrap_or(opt);
+                let detail = std::error::Error::source(&e).map(|s| s.to_string());
+                if let Some(d) = detail {
+                    optparse_exit(&prog, &format!("option {}: {}", opt, d));
+                }
+            }
+            e.exit()
+        }
+    };
     if parsed.help {
         let out = std::io::stdout();
         let mut lock = out.lock();

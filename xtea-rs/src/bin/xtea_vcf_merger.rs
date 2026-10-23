@@ -2,7 +2,7 @@
 use xtea::tools::vcf_merger::{run, Opts};
 
 fn main() {
-    let opts: Opts = xtea::tools::parse_optparse_args();
+    let opts: Opts = xtea::py::optparse::parse_opts("xtea_vcf_merger");
     if let Err(e) = run(opts) {
         eprintln!("Error: {:#}", e);
         std::process::exit(1);
