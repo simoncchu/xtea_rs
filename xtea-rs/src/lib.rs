@@ -1,4 +1,24 @@
 //! xTea: comprehensive transposable element analyzer (Rust re-implementation).
+pub mod alignments;
+pub mod alignments_x10;
+pub mod annotation;
+pub mod basic_info;
+pub mod bwa_align;
+pub mod clip_read;
+pub mod bam;
+pub mod black_list;
+pub mod chrom;
+pub mod cluster;
+pub mod fasta;
 pub mod globals;
+pub mod intermediate_sites;
 pub mod intervaltree;
+pub mod num;
+pub mod parameter;
+pub mod polya;
 pub mod py;
+pub mod rep_type;
+pub mod rng;
+pub mod tei_locator;
+pub mod union_find;
+pub mod utils;
