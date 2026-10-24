@@ -1,6 +1,5 @@
 //! xTea: comprehensive transposable element analyzer (Rust re-implementation).
 pub mod alignments;
-pub mod alignments_x10;
 pub mod annotation;
 pub mod basic_info;
 pub mod bwa_align;

@@ -1,5 +1,5 @@
 //! `xtea`: port of `gnrt_pipeline_local_v38.py` (identical to `bin/xtea`), the generator of the
-//! calling pipelines for short and linked reads on hg38.  [`V38Family`] also serves the CHM13
+//! calling pipelines for Illumina short reads on hg38.  [`V38Family`] also serves the CHM13
 //! copy of the script (see [`super::local_chm13`]).
 //!
 //! Differences to the hg19 script that are reproduced here: the `--hard` option (passed on to
@@ -123,23 +123,8 @@ impl V38Family {
         if (iflag & 2) == 2 {
             s_cmd += &s.sdisc_step;
         }
-        if (iflag & 4) == 4 {
-            s_cmd += &s.sbarcode_step;
-        }
-        if (iflag & 8) == 8 {
-            s_cmd += &s.sfilter_10x;
-        }
         if (iflag & 16) == 16 {
             s_cmd += &s.s_filter;
-        }
-        if (iflag & 32) == 32 {
-            s_cmd += &s.sf_collect;
-        }
-        if (iflag & 64) == 64 {
-            s_cmd += &s.sf_asm;
-        }
-        if (iflag & 128) == 128 {
-            s_cmd += &s.sf_alg_ctg;
         }
         if (iflag & 256) == 256 {
             s_cmd += &s.sf_trsdct;
@@ -198,26 +183,8 @@ fn gnrt_calling_command_dna(a: &CallArgs, s_dna: &str) -> Result<String> {
     if (iflag & 2) == 2 {
         s_cmd += &d.sdisc_step;
     }
-    if (iflag & 4) == 4 {
-        s_cmd += &d.sbarcode_step;
-    }
-    if (iflag & 8) == 8 {
-        s_cmd += &d.sfilter_10x;
-    }
     if (iflag & 16) == 16 {
         s_cmd += &d.s_filter;
-    }
-    if (iflag & 32) == 32 {
-        s_cmd += &d.sf_collect;
-    }
-    if (iflag & 64) == 64 {
-        s_cmd += &d.sf_asm;
-    }
-    if (iflag & 128) == 128 {
-        s_cmd += &d.sf_alg_ctg;
-    }
-    if (iflag & 256) == 256 {
-        s_cmd += &d.sf_mutation;
     }
     if (iflag & 512) == 512 {
         s_cmd += &sf_post_filter;
@@ -341,7 +308,7 @@ impl LocalVariant for V38Family {
 #[derive(Parser, Debug, Clone)]
 #[command(
     name = "xtea",
-    about = "Generate the xTea calling pipelines for short and linked reads on hg38 (Rust port of gnrt_pipeline_local_v38.py)",
+    about = "Generate the xTea calling pipelines for Illumina short reads on hg38 (Rust port of gnrt_pipeline_local_v38.py)",
     infer_long_args = true,
     args_override_self = true,
     disable_help_flag = true
@@ -384,7 +351,13 @@ pub struct Opts {
     pub lib: Option<String>,
     #[arg(allow_hyphen_values = true, short = 'b', long = "bam", value_name = "FILE", help = "Input bam file")]
     pub bam: Option<String>,
-    #[arg(allow_hyphen_values = true, short = 'x', long = "x10", value_name = "FILE", help = "Input 10X bam file")]
+    #[arg(
+        allow_hyphen_values = true,
+        short = 'x',
+        long = "x10",
+        value_name = "FILE",
+        help = "Input 10X bam file [10X; not supported: only null is accepted]"
+    )]
     pub x10: Option<String>,
 
     #[arg(allow_hyphen_values = true, value_parser = parse_int, short = 'n', long = "cores", default_value_t = 1, help = "number of cores")]
@@ -410,7 +383,7 @@ pub struct Opts {
         value_parser = parse_int,
         short = 'f',
         long = "flag",
-        help = "Flag indicates which step to run (1-clip, 2-disc, 4-barcode, 8-xfilter, 16-filter, 32-asm)"
+        help = "Flag indicates which step to run (1-clip, 2-disc, 16-filter, 256-transduction, 512-post-filter, 1024-annotation, 4096-sibling; 5907 runs all; the 10X steps 4/8/32/64/128 are not supported)"
     )]
     pub flag: Option<i64>,
     #[arg(
@@ -458,7 +431,7 @@ pub struct Opts {
         value_parser = parse_int,
         long = "teilen",
         default_value_t = 50,
-        help = "minimum length of the insertion for future analysis"
+        help = "minimum length of the insertion for future analysis [10X; unused]"
     )]
     pub teilen: i64,
 

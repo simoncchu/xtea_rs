@@ -132,24 +132,6 @@ impl XBasicInfo {
         Ok((f_cov, f_cov / n as f64))
     }
 
-    /// `calc_cov_from_bam` (median coverage of random sites).
-    pub fn calc_cov_from_bam(&self, sf_bam: &str, sf_ref: &str, search_win: i64) -> Result<f64> {
-        let l_sites = self.random_slct_site(sf_bam, sf_ref, gv::N_RANDOM_SITES)?;
-        let infos = self.collect_basic_info_of_sites2(&l_sites, sf_bam, search_win, search_win);
-        let mut l_cov = Vec::new();
-        for r in infos.iter().flatten() {
-            let f_cov = (r.flcov + r.frcov) / 2.0;
-            if f_cov >= gv::MIN_COV_RANDOM_SITE {
-                l_cov.push(f_cov);
-            }
-        }
-        l_cov.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        if l_cov.is_empty() {
-            return Ok(0.0);
-        }
-        Ok(l_cov[l_cov.len() / 2])
-    }
-
     /// `collect_basic_info_samples`
     pub fn collect_basic_info_samples(&self, sf_bam_list: &str, sf_ref: &str, search_win: i64) -> Result<IndexMap<String, SampleInfo>> {
         let mut m_sample_info: IndexMap<String, SampleInfo> = IndexMap::new();

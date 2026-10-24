@@ -7,12 +7,18 @@
 //! | `gnrt_pipeline_local_chm13.py`                    | `xtea_chm13`          | [`local_chm13`]   |
 //! | `gnrt_pipeline_germline_cloud_v38.py`             | `xtea_germline_cloud` | [`germline_cloud`]|
 //!
-//! Generated files and printed output are byte-identical to the Python scripts, with one
-//! deliberate change of the invocation convention: the generated commands call `${XTEA_MAIN}`
-//! (the Rust `xtea_main` / `xtea_main_germline_cloud` binaries) instead of
-//! `python ${XTEA_PATH}"x_TEA_main*.py"`, and every `<rep>.config` gets one extra line
-//! `XTEA_MAIN <path>` right after the `XTEA_PATH` line, so that it reaches the parameter block
-//! of each generated script as `XTEA_MAIN=<path>` (see [`xtea_main_path`]).
+//! Generated files and printed output are byte-identical to the Python scripts for Illumina
+//! data, with two deliberate changes:
+//! * the generated commands call `${XTEA_MAIN}` (the Rust `xtea_main` /
+//!   `xtea_main_germline_cloud` binaries) instead of `python ${XTEA_PATH}"x_TEA_main*.py"`, and
+//!   every `<rep>.config` gets one extra line `XTEA_MAIN <path>` right after the `XTEA_PATH`
+//!   line, so that it reaches the parameter block of each generated script as
+//!   `XTEA_MAIN=<path>` (see [`xtea_main_path`]);
+//! * the 10X linked-read parts are left out, as the Rust version calls Illumina short reads only
+//!   (see [`check_illumina_only`]): an existing `-x` 10X BAM list and the 10X steps of `-f`
+//!   (4, 8, 32, 64, 128) are rejected, `-x` may be omitted, the 10X-only `-I` mutation step
+//!   (flag 256 of the HERV, MSTA and Mitochondrion scripts) is not generated, and the
+//!   configurations no longer define `BAM1` and `BARCODE_BAM`.
 //!
 //! This module holds what the generators share: Python-compatible helpers (text files, `str.split`,
 //! `Popen(..., shell=True)`, optparse command lines), the configuration/script writers, the
@@ -21,8 +27,6 @@
 //! several scripts.  The script-specific command strings live in the per-generator modules.
 //!
 //! Python quirks that are reproduced on purpose (see the generator modules for more):
-//! * `split_bam_list` decides whether to read the 10X list from the module-global `sf_bams_10X`
-//!   instead of its own parameter;
 //! * HERV configurations of the hg38/CHM13/cloud scripts are written with `REF` before
 //!   `ANNOTATION1` (argument order of the `write_to_config` call);
 //! * `load_par_config` keeps only the first two whitespace-separated fields of a line;
@@ -43,7 +47,6 @@ use std::process::{Command, Stdio};
 
 pub const S_VERSION: &str = "v0.1";
 pub const ILLUMINA: &str = "illumina";
-pub const X10: &str = "10X";
 pub const PUB_CLIP: &str = "pub_clip";
 pub const CASE_LIST_SUFFIX: &str = ".case_list";
 pub const CTRL_LIST_SUFFIX: &str = ".ctrl_list";
@@ -361,8 +364,9 @@ pub fn gnrt_parameters(l_pars: &[(String, String)]) -> String {
     s_pars
 }
 
-/// `gnrt_lib_config`: write `<prefix>/<rep>.config` for every selected repeat type.  The only
-/// addition to the original is the `XTEA_MAIN <path>` line written right after `XTEA_PATH`.
+/// `gnrt_lib_config`: write `<prefix>/<rep>.config` for every selected repeat type.  Compared
+/// with the original, the `XTEA_MAIN <path>` line is written right after `XTEA_PATH`, and the
+/// 10X BAM definitions (`BAM1`, `BARCODE_BAM`) are left out.
 #[allow(clippy::too_many_arguments)]
 pub fn gnrt_lib_config(
     l_rep_type: &[&RepType],
@@ -379,8 +383,6 @@ pub fn gnrt_lib_config(
     let sf_config_prefix = py_add_slash(Some(sf_config_prefix))?;
 
     let s_bl = "BAM_LIST ${PREFIX}\"bam_list.txt\"\n";
-    let s_bam1 = "BAM1 ${PREFIX}\"10X_phased_possorted_bam.bam\"\n";
-    let s_bc_bam = "BARCODE_BAM ${PREFIX}\"10X_barcode_indexed.sorted.bam\"\n";
     let s_tmp = "TMP ${PREFIX}\"tmp/\"\n";
     let s_tmp_clip = "TMP_CLIP ${PREFIX}\"tmp/clip/\"\n";
     let s_tmp_cns = "TMP_CNS ${PREFIX}\"tmp/cns/\"\nTMP_TNSD ${PREFIX}\"tmp/transduction/\"\n";
@@ -413,8 +415,6 @@ pub fn gnrt_lib_config(
             &sf_xtea,
             &sf_xtea_main,
             s_bl,
-            s_bam1,
-            s_bc_bam,
             s_tmp,
             s_tmp_clip,
             s_tmp_cns,
@@ -465,10 +465,9 @@ pub fn gnrt_script_head_lsf(spartition: Option<&str>, ncores: i64, stime: &str, 
 // Pipeline scripts
 // ------------------------------------------------------------------------------------------
 
-/// `gnrt_pipelines`: create the working folders of one repeat type, the 10X links and
-/// `bam_list.txt`, and write `run_xTEA_pipeline.sh`; returns the scripts written.  The cloud
-/// script's copy is the same function without the 10X part, which is never reached there
-/// (its 10X list is always "null").
+/// `gnrt_pipelines`: create the working folders of one repeat type and `bam_list.txt`, and write
+/// `run_xTEA_pipeline.sh`; returns the scripts written (the 10X links and the 10X entries of
+/// `bam_list.txt` of the original are left out).
 #[allow(clippy::too_many_arguments)]
 pub fn gnrt_pipelines(
     s_head: &str,
@@ -476,7 +475,6 @@ pub fn gnrt_pipelines(
     s_calling_cmd: &str,
     sf_id: &str,
     sf_bams: &str,
-    sf_bams_10x: &str,
     sf_root_folder: &str,
     rep_type: &str,
 ) -> Result<Vec<String>> {
@@ -510,34 +508,6 @@ pub fn gnrt_pipelines(
         }
     }
 
-    let mut m_bams_10x: IndexMap<String, String> = IndexMap::new();
-    if sf_bams_10x != "null" {
-        for line in read_py_lines(sf_bams_10x)? {
-            let fields = py_split(&line);
-            let sid = field(&fields, 0)?;
-            if !m_id.contains(sid) {
-                continue;
-            }
-            let s_bam = field(&fields, 1)?;
-            let s_barcode_bam = field(&fields, 2)?;
-            m_bams_10x.insert(sid.to_string(), s_bam.to_string());
-
-            // soft-link the bams and their indices
-            let links = [
-                (s_bam.to_string(), "10X_phased_possorted_bam.bam"),
-                (s_barcode_bam.to_string(), "10X_barcode_indexed.sorted.bam"),
-                (format!("{}.bai", s_bam), "10X_phased_possorted_bam.bam.bai"),
-                (format!("{}.bai", s_barcode_bam), "10X_barcode_indexed.sorted.bam.bai"),
-            ];
-            for (target, name) in links {
-                let sf_link = format!("{}{}", sf_working_folder, name);
-                if !is_file(&sf_link) {
-                    run_cmd(&format!("ln -s {} {}", target, sf_link))?;
-                }
-            }
-        }
-    }
-
     for sid in &m_id {
         let sf_folder = &sf_working_folder;
         if !exists(sf_folder) {
@@ -549,9 +519,6 @@ pub fn gnrt_pipelines(
             for sf_tmp_bam in bams {
                 s_bam_list += &format!("{}\t{}\n", sf_tmp_bam, ILLUMINA);
             }
-        }
-        if let Some(s_bam) = m_bams_10x.get(sid) {
-            s_bam_list += &format!("{}\t{}\n", s_bam, X10);
         }
         write_py_file(&format!("{}bam_list.txt", sf_folder), &s_bam_list)?;
         // the pipeline file
@@ -579,7 +546,6 @@ pub struct CallArgs {
     /// `str(ncores)` (`None` in the cloud script when `-n` is not given)
     pub ncores: String,
     pub iflk_len: i64,
-    pub min_tei_len: i64,
     pub iflag: Option<i64>,
     pub b_mosaic: bool,
     pub b_user_par: bool,
@@ -643,14 +609,9 @@ impl CallArgs {
 pub struct RnaSteps {
     pub sclip_step: String,
     pub sdisc_step: String,
-    pub sbarcode_step: String,
-    pub sfilter_10x: String,
     pub s_filter: String,
     pub sf_trsdct: String,
     pub sf_sibling: String,
-    pub sf_collect: String,
-    pub sf_asm: String,
-    pub sf_alg_ctg: String,
     pub sf_sr_asm: String,
 }
 
@@ -733,34 +694,6 @@ pub fn rna_steps(a: &CallArgs, b_sva: bool, sr_asm_input: &str) -> RnaSteps {
             idisc_c, ncores, s_user
         );
     }
-    let sbarcode_step = format!(
-        concat!(
-            "${{XTEA_MAIN}} -B -i ${{PREFIX}}\"candidate_list_from_disc.txt\" --nb 400 ",
-            "--ref ${{REF}} -a ${{ANNOTATION}} -b ${{BAM1}} -d ${{BARCODE_BAM}} -p ${{TMP}} ",
-            "-o ${{PREFIX}}\"candidate_list_barcode.txt\" -n {0} {1}\n"
-        ),
-        ncores, s_user
-    );
-    let mut sfilter_10x = format!(
-        concat!(
-            "${{XTEA_MAIN}} -N --cr {0} --nd {1} -b ${{BAM_LIST}} -p ${{TMP_CNS}} ",
-            "--fflank ${{SF_FLANK}} --flklen {2} -n {3} -i ${{PREFIX}}\"candidate_list_barcode.txt\" ",
-            "-r ${{L1_CNS}} --ref ${{REF}} -a ${{ANNOTATION}} ",
-            "-o ${{PREFIX}}\"candidate_disc_filtered_cns.txt\" {4} {5} {6} {7}\n"
-        ),
-        iflt_clip, iflt_disc, iflk_len, ncores, s_purity, s_user, s_tumor, s_resume
-    );
-    if b_sva {
-        sfilter_10x = format!(
-            concat!(
-                "${{XTEA_MAIN}} -N --sva --cr {0} --nd {1} -b ${{BAM_LIST}} -p ${{TMP_CNS}} ",
-                "--fflank ${{SF_FLANK}} --flklen {2} -n {3} -i ${{PREFIX}}\"candidate_list_barcode.txt\" ",
-                "-r ${{L1_CNS}} --ref ${{REF}} -a ${{ANNOTATION}} ",
-                "-o ${{PREFIX}}\"candidate_disc_filtered_cns.txt\" {4} {5} {6} {7}\n"
-            ),
-            iflt_clip, iflt_disc, iflk_len, ncores, s_purity, s_user, s_tumor, s_resume
-        );
-    }
     let mut s_filter = format!(
         concat!(
             "${{XTEA_MAIN}} -N --cr {0} --nd {1} -b ${{BAM_LIST}} -p ${{TMP_CNS}} ",
@@ -814,29 +747,6 @@ pub fn rna_steps(a: &CallArgs, b_sva: bool, sr_asm_input: &str) -> RnaSteps {
             iflt_clip, iflt_disc, iflk_len, ncores, i_rep_type, s_purity, s_tumor, s_resume
         );
     }
-    let sf_collect = format!(
-        concat!(
-            "${{XTEA_MAIN}} -E --nb 500 -b ${{BAM1}} -d ${{BARCODE_BAM}} --ref ${{REF}} ",
-            "-i ${{PREFIX}}\"candidate_disc_filtered_cns_post_filtering.txt\" -p ${{TMP}} -a ${{ANNOTATION}} -n {0} ",
-            "--flklen {1}\n"
-        ),
-        ncores, iflk_len
-    );
-    let sf_asm = format!(
-        concat!(
-            "${{XTEA_MAIN}} -A -L -p ${{TMP}} --ref ${{REF}} -n {0} ",
-            "-i ${{PREFIX}}\"candidate_disc_filtered_cns_post_filtering.txt\"\n"
-        ),
-        ncores
-    );
-    let sf_alg_ctg = format!(
-        concat!(
-            "${{XTEA_MAIN}} -M -i ${{PREFIX}}\"candidate_disc_filtered_cns_post_filtering.txt\" ",
-            "-r ${{REF}} -n {0} -p ${{TMP}} --ref ${{L1_CNS}} ",
-            "-o ${{PREFIX}}\"candidate_list_asm.txt\"\n"
-        ),
-        ncores
-    );
     let mut sf_sr_asm = format!(
         concat!(
             "${{XTEA_MAIN}} --sr_asm -b ${{BAM_LIST}} -p ${{TMP_CNS}}\"asm\" ",
@@ -858,14 +768,9 @@ pub fn rna_steps(a: &CallArgs, b_sva: bool, sr_asm_input: &str) -> RnaSteps {
     RnaSteps {
         sclip_step,
         sdisc_step,
-        sbarcode_step,
-        sfilter_10x,
         s_filter,
         sf_trsdct,
         sf_sibling,
-        sf_collect,
-        sf_asm,
-        sf_alg_ctg,
         sf_sr_asm,
     }
 }
@@ -924,19 +829,13 @@ pub fn post_filter_steps_hg38(a: &CallArgs) -> (String, String) {
 pub struct DnaSteps {
     pub sclip_step: String,
     pub sdisc_step: String,
-    pub sbarcode_step: String,
-    pub sfilter_10x: String,
     pub s_filter: String,
-    pub sf_collect: String,
-    pub sf_asm: String,
-    pub sf_alg_ctg: String,
-    pub sf_mutation: String,
 }
 
 pub fn dna_steps(a: &CallArgs, s_dna: &str) -> DnaSteps {
     let s_user = a.s_user();
     let (iclip_c, iclip_rp, idisc_c, iflt_clip, iflt_disc) = (a.iclip_c, a.iclip_rp, a.idisc_c, a.iflt_clip, a.iflt_disc);
-    let (ncores, iflk_len, min_tei_len, s_cfolder) = (&a.ncores, a.iflk_len, a.min_tei_len, &a.s_cfolder);
+    let (ncores, iflk_len, s_cfolder) = (&a.ncores, a.iflk_len, &a.s_cfolder);
     let sclip_step = format!(
         concat!(
             "${{XTEA_MAIN}} -C {dna} -i ${{BAM_LIST}} --lc {0} --rc {1} --cr {2}  ",
@@ -975,30 +874,6 @@ pub fn dna_steps(a: &CallArgs, s_dna: &str) -> DnaSteps {
             dna = s_dna
         );
     }
-    let sbarcode_step = format!(
-        concat!(
-            "${{XTEA_MAIN}} -B {dna} -i ${{PREFIX}}\"candidate_list_from_disc.txt\" --nb 400 ",
-            "--ref ${{REF}} -a ${{ANNOTATION}} -b ${{BAM1}} -d ${{BARCODE_BAM}} -p ${{TMP}} ",
-            "-o ${{PREFIX}}\"candidate_list_barcode.txt\" -n {0} {1}\n"
-        ),
-        ncores,
-        s_user,
-        dna = s_dna
-    );
-    let sfilter_10x = format!(
-        concat!(
-            "${{XTEA_MAIN}} -N {dna} --cr {0} --nd {1} -b ${{BAM_LIST}} -p ${{TMP_CNS}} ",
-            "--fflank ${{SF_FLANK}} --flklen {2} -n {3} -i ${{PREFIX}}\"candidate_list_barcode.txt\" ",
-            "-r ${{L1_CNS}} --ref ${{REF}} -a ${{ANNOTATION}} ",
-            "-o ${{PREFIX}}\"candidate_disc_filtered_cns.txt\" {4}\n"
-        ),
-        iflt_clip,
-        iflt_disc,
-        iflk_len,
-        ncores,
-        s_user,
-        dna = s_dna
-    );
     let s_filter = format!(
         concat!(
             "${{XTEA_MAIN}} -N {dna} --cr {0} --nd {1} -b ${{BAM_LIST}} -p ${{TMP_CNS}} ",
@@ -1013,41 +888,7 @@ pub fn dna_steps(a: &CallArgs, s_dna: &str) -> DnaSteps {
         s_user,
         dna = s_dna
     );
-    let sf_collect = format!(
-        concat!(
-            "${{XTEA_MAIN}} -E {dna} --nb 500 -b ${{BAM1}} -d ${{BARCODE_BAM}} --ref ${{REF}} ",
-            "-i ${{PREFIX}}\"candidate_disc_filtered_cns.txt\" -p ${{TMP}} -a ${{ANNOTATION}} -n {0} ",
-            "--flklen {1}\n"
-        ),
-        ncores,
-        iflk_len,
-        dna = s_dna
-    );
-    let sf_asm = format!(
-        concat!("${{XTEA_MAIN}} -A -L {dna} -p ${{TMP}} --ref ${{REF}} -n {0} ", "-i ${{PREFIX}}\"candidate_disc_filtered_cns.txt\"\n"),
-        ncores,
-        dna = s_dna
-    );
-    let sf_alg_ctg = format!(
-        concat!(
-            "${{XTEA_MAIN}} -M {dna} -i ${{PREFIX}}\"candidate_disc_filtered_cns.txt\" ",
-            "-r ${{REF}} -n {0} -p ${{TMP}} --ref ${{L1_CNS}} ",
-            "-o ${{PREFIX}}\"candidate_list_asm.txt\"\n"
-        ),
-        ncores,
-        dna = s_dna
-    );
-    let sf_mutation = format!(
-        concat!(
-            "${{XTEA_MAIN}} -I {dna} -p ${{TMP}} -n {0} ",
-            "-i ${{PREFIX}}\"candidate_disc_filtered_cns.txt\" -r ${{L1_CNS}} ",
-            "--teilen {1} -o ${{PREFIX}}\"internal_snp.vcf.gz\"\n"
-        ),
-        ncores,
-        min_tei_len,
-        dna = s_dna
-    );
-    DnaSteps { sclip_step, sdisc_step, sbarcode_step, sfilter_10x, s_filter, sf_collect, sf_asm, sf_alg_ctg, sf_mutation }
+    DnaSteps { sclip_step, sdisc_step, s_filter }
 }
 
 /// Steps of `gnrt_calling_command_annotation_vcf` / `..._annotation_vcf_tumor_case` whose text
@@ -1305,12 +1146,37 @@ pub fn prepare_case_control_bam(sf_ori_bam: &str, sf_sprt_bam: &str, sf_control_
     write_py_file(sf_control_bam, &s_ctrl)
 }
 
+/// Steps of `-f` that work on 10X linked reads: 4 (barcode), 8 (filtering of the barcode
+/// candidates), 32 (read collection), 64 (local assembly) and 128 (contig alignment).
+pub const X10_FLAG_STEPS: [(i64, &str); 5] = [(4, "barcode"), (8, "xfilter"), (32, "collect"), (64, "asm"), (128, "contig alignment")];
+
+/// The Rust version calls insertions from Illumina short reads only: reject an existing 10X BAM
+/// list given with `-x` (a missing file or "null" is accepted, as is leaving `-x` out) and the
+/// 10X steps of `-f`.
+pub fn check_illumina_only(sf_x10: Option<&str>, iflag: Option<i64>) -> Result<()> {
+    const HINT: &str = "the Rust version of xTea supports Illumina short reads only (use the Python xTea for 10X data)";
+    if let Some(sf) = sf_x10 {
+        if is_file(sf) {
+            return Err(anyhow!("-x/--x10: {} is a 10X linked-read BAM list; {}; pass -x null or leave the option out", sf, HINT));
+        }
+    }
+    if let Some(iflag) = iflag {
+        let l_x10: Vec<String> =
+            X10_FLAG_STEPS.iter().filter(|(bit, _)| iflag & bit == *bit).map(|(bit, name)| format!("{}-{}", bit, name)).collect();
+        if !l_x10.is_empty() {
+            return Err(anyhow!("-f/--flag {} includes the 10X linked-read step(s) {}; {}", iflag, l_x10.join(", "), HINT));
+        }
+    }
+    Ok(())
+}
+
 /// The `__main__` block of the local generators.
 pub fn run_local(v: &dyn LocalVariant, o: &LocalOptions) -> Result<()> {
     if o.version {
-        py_print(&format!("xTea {} for short and linked reads on {}\n", S_VERSION, v.genome()));
+        py_print(&format!("xTea {} for Illumina short reads on {}\n", S_VERSION, v.genome()));
         return Ok(());
     }
+    check_illumina_only(o.x10.as_deref(), o.flag)?;
     let xtea_main = xtea_main_path(XTEA_MAIN_EXE);
     let s_wfolder = py_add_slash(o.wfolder.as_deref())?;
     if !exists(&s_wfolder) {
@@ -1322,7 +1188,6 @@ pub fn run_local(v: &dyn LocalVariant, o: &LocalOptions) -> Result<()> {
         Ok(if is_file(p) { p.to_string() } else { "null".to_string() })
     };
     let sf_bams = isfile_or_null(&o.bam)?;
-    let sf_bams_10x = isfile_or_null(&o.x10)?;
 
     let mut sf_folder_rep = o.lib.clone();
     let mut sf_ref = o.r#ref.clone();
@@ -1337,13 +1202,12 @@ pub fn run_local(v: &dyn LocalVariant, o: &LocalOptions) -> Result<()> {
         let ctx = RunCtx {
             v,
             o,
-            sf_bams_10x_global: &sf_bams_10x,
             l_rep_type: &l_rep_type,
             sf_folder_rep: sf_folder_rep.as_deref(),
             sf_ref: sf_ref.as_deref(),
             xtea_main: &xtea_main,
         };
-        gnrt_running_shell(&ctx, sf_bams_arg, &sf_bams_10x, &s_wfolder, sf_case_control_bam_list, b_denovo)
+        gnrt_running_shell(&ctx, sf_bams_arg, &s_wfolder, sf_case_control_bam_list, b_denovo)
     };
     if !o.case_control {
         // non-case-ctrl mode (mainly for germline)
@@ -1366,8 +1230,6 @@ pub fn run_local(v: &dyn LocalVariant, o: &LocalOptions) -> Result<()> {
 struct RunCtx<'a> {
     v: &'a dyn LocalVariant,
     o: &'a LocalOptions,
-    /// the module-global `sf_bams_10X` (read by `split_bam_list`)
-    sf_bams_10x_global: &'a str,
     l_rep_type: &'a [&'static RepType],
     sf_folder_rep: Option<&'a str>,
     sf_ref: Option<&'a str>,
@@ -1378,7 +1240,6 @@ struct RunCtx<'a> {
 fn gnrt_running_shell(
     ctx: &RunCtx,
     sf_bams: &str,
-    sf_10x_bams: &str,
     s_wfolder: &str,
     sf_case_control_bam_list: &str,
     b_denovo: bool,
@@ -1402,8 +1263,8 @@ fn gnrt_running_shell(
         popen(&format!("mkdir {}", sf_pub_clip))?;
     }
 
-    // the sample, bam, x10 bam files
-    split_bam_list(ctx, &m_id, sf_bams, sf_10x_bams, &s_wfolder, sf_case_control_bam_list)?;
+    // the sample and bam files
+    split_bam_list(ctx, &m_id, sf_bams, &s_wfolder, sf_case_control_bam_list)?;
 
     let mut l_sh: Vec<String> = Vec::new();
     for sid_tmp in &m_id {
@@ -1430,10 +1291,6 @@ fn gnrt_running_shell(
             if !is_file(&sf_rep_bam) {
                 sf_rep_bam = "null".to_string();
             }
-            let mut sf_rep_x10_bam = format!("{}/x10_bam_list1.txt", s_wfolder_rep);
-            if !exists(&sf_rep_x10_bam) {
-                sf_rep_x10_bam = "null".to_string();
-            }
             let mut s_head = String::new();
             if o.lsf {
                 s_head = gnrt_script_head_lsf(o.partition.as_deref(), o.cores, &o.time, o.memory, sid_tmp)?;
@@ -1450,7 +1307,6 @@ fn gnrt_running_shell(
                 iflt_disc: o.nfilterdisc,
                 ncores: o.cores.to_string(),
                 iflk_len: o.flklen,
-                min_tei_len: o.teilen,
                 iflag: o.flag,
                 b_mosaic: o.mosaic,
                 b_user_par: o.user,
@@ -1477,7 +1333,6 @@ fn gnrt_running_shell(
                 &s_calling_cmd,
                 &sf_rep_sample_id,
                 &sf_rep_bam,
-                &sf_rep_x10_bam,
                 &sf_sample_folder,
                 rep.name,
             )?;
@@ -1496,13 +1351,12 @@ fn gnrt_running_shell(
 }
 
 /// `split_bam_list`: write `sample_id.txt`, `bam_list1.txt` (case BAMs), `bam_list2.txt`
-/// (controls), `bam_list3.txt` (case + controls) and `x10_bam_list1.txt` in every
-/// sample/repeat folder.
+/// (controls) and `bam_list3.txt` (case + controls) in every sample/repeat folder (the
+/// `x10_bam_list1.txt` of the original is left out).
 fn split_bam_list(
     ctx: &RunCtx,
     m_ids: &IndexSet<String>,
     sf_bams: &str,
-    sf_x10_bams: &str,
     s_wfolder: &str,
     sf_case_control_bam_list: &str,
 ) -> Result<()> {
@@ -1520,21 +1374,6 @@ fn split_bam_list(
             }
             let s_bam = field(&fields, 1)?;
             m_bams.entry(sid.to_string()).or_default().push(s_bam.to_string());
-        }
-    }
-    // load in sf_x10_bams; the original tests the module-global `sf_bams_10X` here, not its
-    // parameter (both always hold the same value)
-    let mut m_bams_10x: IndexMap<String, (String, String)> = IndexMap::new();
-    if ctx.sf_bams_10x_global != "null" {
-        for line in read_py_lines(sf_x10_bams)? {
-            let fields = py_split(&line);
-            let sid = field(&fields, 0)?;
-            if !m_ids.contains(sid) {
-                continue;
-            }
-            let s_bam = field(&fields, 1)?;
-            let s_barcode_bam = field(&fields, 2)?;
-            m_bams_10x.insert(sid.to_string(), (s_bam.to_string(), s_barcode_bam.to_string()));
         }
     }
     // load in the control bams
@@ -1582,9 +1421,6 @@ fn split_bam_list(
                 s += "\n";
                 write_py_file(&format!("{}/bam_list3.txt", s_wfolder_rep), &s)?;
             }
-            if let Some((s_bam, s_barcode_bam)) = m_bams_10x.get(sid_tmp) {
-                write_py_file(&format!("{}/x10_bam_list1.txt", s_wfolder_rep), &format!("{}\t{}\t{}\n", sid_tmp, s_bam, s_barcode_bam))?;
-            }
         }
     }
     Ok(())
@@ -1621,6 +1457,22 @@ mod tests {
         assert_eq!(py_split(" a\u{a0}b\x1cc\u{3000}d \n"), vec!["a", "b", "c", "d"]);
         assert_eq!(py_rstrip("ab \x1f\u{2028}\t\n"), "ab");
         assert_eq!(py_split("a\u{feff}b"), vec!["a\u{feff}b"]);
+    }
+
+    #[test]
+    fn illumina_only() {
+        assert!(check_illumina_only(None, None).is_ok());
+        assert!(check_illumina_only(Some("null"), Some(5907)).is_ok());
+        assert!(check_illumina_only(Some("/nonexistent/10X_bam_list.txt"), Some(19)).is_ok());
+        let e = check_illumina_only(Some("null"), Some(31)).unwrap_err().to_string();
+        assert!(e.contains("4-barcode, 8-xfilter"), "{}", e);
+        assert!(check_illumina_only(None, Some(5907 | 128)).is_err());
+        let dir = std::env::temp_dir().join(format!("xtea_x10_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let sf = dir.join("10X_bam_list.txt");
+        std::fs::write(&sf, "NA12878 a.bam b.bam\n").unwrap();
+        assert!(check_illumina_only(sf.to_str(), Some(5907)).is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

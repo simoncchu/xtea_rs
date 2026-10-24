@@ -330,35 +330,6 @@ pub fn merge_clip_disc(sf_disc_tmp: &str, sf_clip: &str, sf_out: &str) -> Result
     Ok(())
 }
 
-/// `merge_clip_disc_barcode`
-pub fn merge_clip_disc_barcode(sf_barcode_tmp: &str, sf_disc: &str, sf_out: &str) -> Result<()> {
-    let mut m_bc: IndexMap<String, std::collections::HashMap<String, String>> = IndexMap::new();
-    for line in utils::read_lines(sf_barcode_tmp)? {
-        let f = split_ws(&line);
-        m_bc.entry(f[0].to_string()).or_default().insert(f[1].to_string(), f[f.len() - 1].to_string());
-    }
-    let mut fout = utils::create(sf_out)?;
-    for line in utils::read_lines(sf_disc)? {
-        let mut f: Vec<String> = split_ws(&line).iter().map(|s| s.to_string()).collect();
-        let chrm = f[0].clone();
-        let m = match m_bc.get(&chrm) {
-            Some(m) => m,
-            None => {
-                println!("Error happen at merge clip, disc and barcode step: {} not exist", chrm);
-                continue;
-            }
-        };
-        let bc = match m.get(&f[1]) {
-            Some(x) => x.clone(),
-            None => continue,
-        };
-        f.push(bc);
-        writeln!(fout, "{}", f.join("\t"))?;
-    }
-    fout.flush()?;
-    Ok(())
-}
-
 /// `combine_closing_sites`
 pub fn combine_closing_sites(sf_input: &str, iwindow: i64, sf_out: &str) -> Result<()> {
     let mut m: SiteMap<(i64, i64)> = IndexMap::new();

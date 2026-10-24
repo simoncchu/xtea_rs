@@ -247,7 +247,6 @@ fn gnrt_running_shell(
         if !is_file(&sf_rep_bam) {
             sf_rep_bam = "null".to_string();
         }
-        let sf_rep_x10_bam = "null";
         let s_head = "";
         let l_libs = load_par_config(&sf_config)?;
         let s_libs = gnrt_parameters(&l_libs);
@@ -259,7 +258,6 @@ fn gnrt_running_shell(
             iflt_disc: o.nfilterdisc,
             ncores: py_int_or_none(ncores),
             iflk_len: o.flklen,
-            min_tei_len: o.teilen,
             iflag: o.flag,
             b_mosaic,
             b_user_par,
@@ -276,7 +274,7 @@ fn gnrt_running_shell(
             s_calling_cmd = gnrt_calling_command(s_family_id, &a, true)?;
         }
         let l_tmp_sh =
-            gnrt_pipelines(s_head, &s_libs, &s_calling_cmd, &sf_rep_sample_id, &sf_rep_bam, sf_rep_x10_bam, &sf_sample_folder, rep.name)?;
+            gnrt_pipelines(s_head, &s_libs, &s_calling_cmd, &sf_rep_sample_id, &sf_rep_bam, &sf_sample_folder, rep.name)?;
         l_sh.extend(l_tmp_sh);
     }
     py_print("List of command:\n");
@@ -430,7 +428,7 @@ pub struct Opts {
         value_parser = parse_int,
         short = 'f',
         long = "flag",
-        help = "Flag indicates which step to run (1-clip, 2-disc, 4-barcode, 8-xfilter, 16-filter, 32-asm)"
+        help = "Flag indicates which step to run (1-clip, 2-disc, 16-filter, 256-transduction, 512-post-filter, 1024-annotation)"
     )]
     pub flag: Option<i64>,
     #[arg(

@@ -40,25 +40,25 @@ pub struct Opts {
     pub sibling: bool,
     #[arg(long = "spectrum", help = "Spectrum analysis by tumor type")]
     pub spectrum: bool,
-    #[arg(short = 'B', long = "barcode", help = "Indicate the input is 10X bam")]
+    #[arg(short = 'B', long = "barcode", help = "Indicate the input is 10X bam [10X; not supported]")]
     pub barcode: bool,
-    #[arg(short = 'E', long = "collect", help = "Collect reads for candidate sites")]
+    #[arg(short = 'E', long = "collect", help = "Collect reads for candidate sites [10X; not supported]")]
     pub collect: bool,
-    #[arg(short = 'I', long = "mutation", help = "Call internal mutation")]
+    #[arg(short = 'I', long = "mutation", help = "Call internal mutation [10X; not supported]")]
     pub mutation: bool,
     #[arg(short = 'U', long = "collect_Illumina", help = "Collect reads for candidate sites from normal illumina alignment")]
     pub collect_illumina: bool,
-    #[arg(short = 'F', long = "filter_asm", help = "Filter out candidate sites from assembly")]
+    #[arg(short = 'F', long = "filter_asm", help = "Filter out candidate sites from assembly [10X; not supported]")]
     pub filter_asm: bool,
     #[arg(short = 'G', long = "contig_realign", help = "Filter out candidate sites from assembly")]
     pub contig_realign: bool,
     #[arg(short = 'T', long = "trace", help = "Trace the sources of TEIs")]
     pub trace: bool,
-    #[arg(short = 'A', long = "assembly", help = "Do local assembly for collected reads")]
+    #[arg(short = 'A', long = "assembly", help = "Do local assembly for collected reads [10X; not supported]")]
     pub assembly: bool,
-    #[arg(short = 'L', long = "local", help = "Assemble the TEIs on local machine")]
+    #[arg(short = 'L', long = "local", help = "Assemble the TEIs on local machine [10X; unused]")]
     pub local: bool,
-    #[arg(short = 'M', long = "map", help = "map flank regions to the assembled contigs")]
+    #[arg(short = 'M', long = "map", help = "map flank regions to the assembled contigs [10X; not supported]")]
     pub map: bool,
     #[arg(short = 'V', long = "visualization", help = "Show the heatmap figure of the selected regions")]
     pub visualization: bool,
@@ -98,7 +98,7 @@ pub struct Opts {
     pub bed: bool,
     #[arg(long = "mosaic", help = "Call mosaic events")]
     pub mosaic: bool,
-    #[arg(long = "flk_map", help = "Map flanks to contigs")]
+    #[arg(long = "flk_map", help = "Map flanks to contigs [10X; not supported]")]
     pub flk_map: bool,
     #[arg(long = "analysis", help = "Result analysis")]
     pub analysis: bool,
@@ -127,7 +127,7 @@ pub struct Opts {
     pub annotation: Option<String>,
     #[arg(allow_hyphen_values = true, short = 'b', long = "bam", value_name = "FILE", help = "Input bam file")]
     pub bam: Option<String>,
-    #[arg(allow_hyphen_values = true, short = 'd', long = "barcode_bam", value_name = "FILE", help = "Input barcode indexed bam file")]
+    #[arg(allow_hyphen_values = true, short = 'd', long = "barcode_bam", value_name = "FILE", help = "Input barcode indexed bam file [10X; unused]")]
     pub barcode_bam: Option<String>,
     #[arg(allow_hyphen_values = true, short = 'o', long = "output", value_name = "FILE", help = "The output file")]
     pub output: Option<String>,
@@ -161,7 +161,7 @@ pub struct Opts {
     pub cliprep: i64,
     #[arg(allow_hyphen_values = true, value_parser = crate::py::optparse::parse_int, long = "nd", default_value_t = 5, help = "cutoff of minimum # of discordant pair")]
     pub ndisc: i64,
-    #[arg(allow_hyphen_values = true, value_parser = crate::py::optparse::parse_int, long = "nb", default_value_t = 500, help = "cutoff of maximum # of molecure coverage")]
+    #[arg(allow_hyphen_values = true, value_parser = crate::py::optparse::parse_int, long = "nb", default_value_t = 500, help = "cutoff of maximum # of molecure coverage [10X; unused]")]
     pub nbarcode: i64,
     #[arg(allow_hyphen_values = true, value_parser = crate::py::optparse::parse_int, long = "teilen", help = "minimum length of the insertion for future analysis")]
     pub teilen: Option<i64>,
@@ -237,13 +237,6 @@ pub fn automatic_gnrt_parameters_case_control(sf_bam_list: &str, sf_ref: &str, s
         rcd.cov_py, par_rcd.0, par_rcd.1, par_rcd.2
     );
     Ok((par_rcd, rcd))
-}
-
-/// `automatic_set_molecule_cutoff_for_10X_bam`
-pub fn automatic_set_molecule_cutoff_for_10x_bam(sf_bam: &str, sf_ref: &str, s_working_folder: &str, n_jobs: usize) -> Result<i64> {
-    let x_basic_info = XBasicInfo::new(s_working_folder, n_jobs, sf_ref);
-    let f_cov = x_basic_info.calc_cov_from_bam(sf_bam, sf_ref, 500)?;
-    Ok(parameter::get_barcode_cov_cutoff(f_cov))
 }
 
 /// Set READ_LENGTH / insert size / AVE_COVERAGE from a basic record (the `global_values.set_*`
@@ -362,7 +355,7 @@ pub fn run_variant(opts: Opts, variant: &MainVariant) -> Result<()> {
     } else if opts.mosaic {
         crate::steps::run_mosaic_clip(&opts, b_automatic, n_jobs)?;
     } else if opts.barcode {
-        crate::steps::run_barcode(&opts, n_jobs)?;
+        crate::steps::run_x10_unsupported("-B/--barcode")?;
     } else if opts.post_f {
         crate::steps::run_post_filter(&opts, b_tumor, n_jobs)?;
     } else if opts.gntp_feature {
@@ -394,21 +387,21 @@ pub fn run_variant(opts: Opts, variant: &MainVariant) -> Result<()> {
     } else if opts.igv && !cloud {
         crate::steps::run_igv(&opts, n_jobs)?;
     } else if opts.collect {
-        crate::steps::run_collect_10x(&opts, n_jobs)?;
+        crate::steps::run_x10_unsupported("-E/--collect")?;
     } else if opts.mutation {
-        crate::steps::run_mutation(&opts, n_jobs)?;
+        crate::steps::run_x10_unsupported("-I/--mutation")?;
     } else if opts.gene {
         crate::steps::run_gene_variant(&opts, !cloud)?;
     } else if opts.collect_illumina {
         // nothing to do (as in the original)
     } else if opts.assembly {
-        crate::steps::run_assembly(&opts, n_jobs)?;
+        crate::steps::run_x10_unsupported("-A/--assembly")?;
     } else if opts.map {
-        crate::steps::run_map(&opts, n_jobs)?;
+        crate::steps::run_x10_unsupported("-M/--map")?;
     } else if opts.flk_map {
-        crate::steps::run_flk_map(&opts, n_jobs)?;
+        crate::steps::run_x10_unsupported("--flk_map")?;
     } else if opts.filter_asm {
-        crate::steps::run_filter_asm(&opts, n_jobs)?;
+        crate::steps::run_x10_unsupported("-F/--filter_asm")?;
     } else if opts.collect_clip {
         let sf_bam_list = &opts.input;
         let sf_ref = opts.r#ref.clone().unwrap_or_default();

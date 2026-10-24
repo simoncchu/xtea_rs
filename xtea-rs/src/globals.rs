@@ -66,7 +66,6 @@ pub fn turn_on_mit() {
 
 // originally used in clip_read.py
 pub const INITIAL_MIN_CLIP_CUTOFF_ILLUMINA: i64 = 2;
-pub const INITIAL_MIN_CLIP_CUTOFF_X10: i64 = 3;
 global_i64!(INITIAL_MIN_CLIP_CUTOFF, initial_min_clip_cutoff, set_initial_min_clip_cutoff, 2);
 
 pub const BWA_REALIGN_CUTOFF: i64 = 9;
@@ -102,7 +101,6 @@ pub const CK_POLYA_SEQ_MAX: i64 = 20;
 pub const POLYA_RATIO: f64 = 0.4;
 
 // originally used in x_alignments.py
-pub const BARCODE_COV_CUTOFF: i64 = 600;
 pub const MIN_RAW_DISC_CLUSTER_RATIO: f64 = 0.3;
 pub const ILLUMINA: &str = "illumina";
 pub const X10: &str = "10X";

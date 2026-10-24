@@ -138,11 +138,6 @@ pub fn cvt_to_ascii_quality(q: &[u8]) -> String {
     q.iter().map(|&x| char::from_u32(x as u32 + 33).unwrap_or('?')).collect()
 }
 
-/// `XAlignment._change_barcode_format`: "xxx-1" -> "xxx_1"
-pub fn change_barcode_format(s: &str) -> String {
-    s.split('-').collect::<Vec<_>>().join("_")
-}
-
 /// `XAlignment._cvt_algnmt_to_fq`
 pub fn cvt_algnmt_to_fq(a: &Record) -> String {
     let mut name = a.query_name();
@@ -208,16 +203,6 @@ pub fn one_alignment_is_full_map(cigar: &[(u32, u32)], min_clip_len: i64) -> boo
     false
 }
 
-/// `BarcodeAlignment` accessors.
-pub fn barcode_get_chrm(a: &Record) -> String {
-    a.get_tag_string("ch").unwrap_or_else(|| "*".to_string())
-}
-pub fn barcode_get_mate_chrm(a: &Record) -> String {
-    a.get_tag_string("nh").unwrap_or_else(|| "*".to_string())
-}
-pub fn barcode_get_map_pos(a: &Record) -> i64 {
-    a.get_tag_string("cp").and_then(|s| s.parse::<i64>().ok()).unwrap_or(0)
-}
 
 /// `BamInfo.load_read_names`
 pub fn load_read_names(sf_names: &str) -> Result<Vec<String>> {

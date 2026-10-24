@@ -68,65 +68,6 @@ pub fn parameters() -> CovPars<(i64, i64, i64)> {
     CovPars { m_cov_par: m }
 }
 
-/// `XParameters` (10X)
-pub fn x_parameters() -> CovPars<(i64, i64, i64)> {
-    let mut m = BTreeMap::new();
-    for (k, v) in [
-        (25, (4, 5, 1)),
-        (30, (4, 6, 1)),
-        (35, (4, 6, 1)),
-        (40, (4, 7, 1)),
-        (45, (5, 7, 1)),
-        (50, (5, 7, 1)),
-        (60, (5, 7, 2)),
-        (70, (5, 7, 2)),
-    ] {
-        m.insert(k, v);
-    }
-    CovPars { m_cov_par: m }
-}
-
-/// `XParameters.get_barcode_cov_cutoff`
-pub fn get_barcode_cov_cutoff(fcov: f64) -> i64 {
-    let icov = fcov.trunc() as i64;
-    if (icov - 30).abs() > (icov - 60).abs() {
-        500
-    } else {
-        400
-    }
-}
-
-/// `LRDParameters`
-pub fn lrd_parameters() -> CovPars<i64> {
-    let mut m = BTreeMap::new();
-    for (k, v) in [
-        (5, 1),
-        (10, 3),
-        (15, 4),
-        (20, 4),
-        (25, 5),
-        (30, 6),
-        (35, 6),
-        (40, 7),
-        (45, 8),
-        (50, 9),
-        (60, 10),
-        (70, 11),
-        (80, 12),
-        (90, 13),
-        (100, 14),
-        (110, 15),
-        (120, 16),
-        (130, 17),
-        (140, 18),
-        (150, 19),
-        (200, 20),
-    ] {
-        m.insert(k, v);
-    }
-    CovPars { m_cov_par: m }
-}
-
 /// `CaseControlFilterPars`
 pub fn case_control_filter_pars() -> CovPars<(i64, i64, i64)> {
     let mut m = BTreeMap::new();

@@ -10,10 +10,27 @@ use crate::globals as gv;
 use crate::intermediate_sites::{self as xis, SiteMap};
 use crate::num::PyVal;
 use crate::utils::{self, split_ws};
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use indexmap::IndexMap;
 use std::io::Write;
 use std::sync::Arc;
+
+/// The Rust version calls insertions from Illumina short reads only: a BAM list entry with the
+/// 10X platform tag (the Python version lowers the initial clip cutoff for those) is rejected
+/// before any BAM is processed.
+fn reject_x10_bams(sf_list: &str, l_lines: &[String]) -> Result<()> {
+    for line in l_lines {
+        let fields = split_ws(line);
+        if fields.len() >= 2 && utils::rstrip(fields[1]) == gv::X10 {
+            return Err(anyhow!(
+                "{} is listed as a 10X linked-read bam in {}; the Rust version of xTea supports Illumina short reads only (use the Python xTea for 10X data)",
+                fields[0],
+                sf_list
+            ));
+        }
+    }
+    Ok(())
+}
 
 pub struct TeMultiLocator {
     pub sf_list: String,
@@ -38,7 +55,7 @@ impl TeMultiLocator {
             if sf_ori_bam.len() <= 1 {
                 continue;
             }
-            let caller = TeLocator::new(sf_ori_bam, sf_ori_bam, &self.working_folder, self.n_jobs, &self.sf_ref);
+            let caller = TeLocator::new(sf_ori_bam, &self.working_folder, self.n_jobs, &self.sf_ref);
             caller.collect_all_clipped_reads_only(sf_annotation, b_se, s_clip_wfolder, wfolder_pub_clip)?;
         }
         Ok(())
@@ -63,11 +80,13 @@ impl TeMultiLocator {
         max_cov: i64,
         sf_out: &str,
     ) -> Result<()> {
+        let l_lines = utils::read_lines(&self.sf_list)?;
+        reject_x10_bams(&self.sf_list, &l_lines)?;
         let mut cnt = 0usize;
         let mut s_sample_bam = String::new();
         let mut b_set = false;
         let mut i_idx_bam = 0usize;
-        for line in utils::read_lines(&self.sf_list)? {
+        for line in l_lines {
             let fields = split_ws(&line);
             if fields.len() < 2 {
                 println!("Error input bam file {}!!!", utils::rstrip(&line));
@@ -76,10 +95,7 @@ impl TeMultiLocator {
             let sf_ori_bam = fields[0];
             let s_read_type = utils::rstrip(fields[1]);
             println!("Input bam {} is sequenced from {} platform!", sf_ori_bam, s_read_type);
-            if s_read_type == gv::X10 {
-                println!("10X bam! Set the initial cutoff as {}", gv::INITIAL_MIN_CLIP_CUTOFF_X10);
-                gv::set_initial_min_clip_cutoff(gv::INITIAL_MIN_CLIP_CUTOFF_X10);
-            } else if mosaic_mode {
+            if mosaic_mode {
                 if cutoff_left_clip <= 3 {
                     println!("Clip cutoff is small (<=3), keep all the clipped reads (initial cutoff set as 1)!!!");
                     gv::set_initial_min_clip_cutoff(1);
@@ -103,7 +119,7 @@ impl TeMultiLocator {
             let cutoff_hit_rep_copy = gv::initial_min_clip_cutoff();
             let sf_out_tmp = format!("{}{}{}", self.working_folder, gv::CLIP_TMP, cnt);
             cnt += 1;
-            let caller = TeLocator::new(sf_ori_bam, sf_ori_bam, &self.working_folder, self.n_jobs, &self.sf_ref);
+            let caller = TeLocator::new(sf_ori_bam, &self.working_folder, self.n_jobs, &self.sf_ref);
             if sf_clip_folder.is_empty() {
                 println!("public folder is null!!!!");
                 continue;
@@ -263,7 +279,7 @@ impl TeMultiLocator {
                 continue;
             }
             let sf_bam = fields[0];
-            let caller = TeLocator::new(sf_bam, sf_bam, &self.working_folder, self.n_jobs, &self.sf_ref);
+            let caller = TeLocator::new(sf_bam, &self.working_folder, self.n_jobs, &self.sf_ref);
             let tmp_cutoff = 1;
             let (m_disc, m_raw) = caller.filter_candidate_sites_by_discordant_pairs_non_barcode(m_sites, iext, i_is, f_dev, sf_annotation, tmp_cutoff)?;
             let sf_out_tmp = format!("{}{}{}", self.working_folder, gv::DISC_TMP, cnt);
@@ -368,17 +384,15 @@ fn to_pyval_map(m: &SiteMap<Vec<i64>>) -> SiteMap<Vec<PyVal>> {
 
 pub struct TeLocator {
     pub sf_bam: String,
-    pub sf_barcode_bam: String,
     pub working_folder: String,
     pub n_jobs: usize,
     pub sf_reference: String,
 }
 
 impl TeLocator {
-    pub fn new(sf_bam: &str, sf_barcode_bam: &str, working_folder: &str, n_jobs: usize, sf_ref: &str) -> Self {
+    pub fn new(sf_bam: &str, working_folder: &str, n_jobs: usize, sf_ref: &str) -> Self {
         TeLocator {
             sf_bam: sf_bam.to_string(),
-            sf_barcode_bam: sf_barcode_bam.to_string(),
             working_folder: working_folder.to_string(),
             n_jobs,
             sf_reference: sf_ref.to_string(),
@@ -696,95 +710,4 @@ impl TeLocator {
         Ok((m_new, m_raw))
     }
 
-    /// `run_filter_by_barcode_coverage`
-    fn run_filter_by_barcode_coverage(&self, site_chrm1: &str, iextend: i64, i_cov_cutoff: i64, folder: &str, s_suffix: &str) -> Result<()> {
-        let sf_candidate_list = format!("{}{}{}", folder, site_chrm1, s_suffix);
-        if !utils::exists(&sf_candidate_list) {
-            return Ok(());
-        }
-        let mut m_candidate_pos: IndexMap<i64, String> = IndexMap::new();
-        for line in utils::read_lines(&sf_candidate_list)? {
-            let f = split_ws(&line);
-            m_candidate_pos.insert(utils::pint(f[1])?, f[2..].join("\t"));
-        }
-        let bam_info = BamInfo::new(&self.sf_bam, &self.sf_reference);
-        let b_with_chr = bam_info.is_chrm_contain_chr()?;
-        let m_chrms = bam_info.get_all_reference_names()?;
-        let site_chrm = crate::annotation::process_chrm_name(site_chrm1, b_with_chr);
-        if !m_chrms.contains(&site_chrm) {
-            return Ok(());
-        }
-        let mut bamfile = AlignmentFile::open(&self.sf_bam, &self.sf_reference)?;
-        let mut m_new: IndexMap<i64, usize> = IndexMap::new();
-        for (&site_pos, _) in m_candidate_pos.iter() {
-            if site_pos < iextend {
-                continue;
-            }
-            let set_barcodes = crate::alignments_x10::parse_barcodes_for_one_site(&mut bamfile, &site_chrm, site_pos, iextend)?;
-            let n = set_barcodes.len();
-            if n as i64 > i_cov_cutoff {
-                continue;
-            }
-            m_new.insert(site_pos, n);
-        }
-        let mut f = utils::create(&format!("{}{}", sf_candidate_list, gv::DISC_SUFFIX_FILTER))?;
-        for (pos, n) in m_new.iter() {
-            write!(f, "{}\t{}\n", pos, n)?;
-        }
-        f.flush()?;
-        Ok(())
-    }
-
-    /// `filter_candidate_sites_by_barcode_coverage` (step -B)
-    pub fn filter_candidate_sites_by_barcode_coverage(&self, m_candidate_sites: &SiteMap<Vec<i64>>, iextend: i64, i_cov_cutoff: i64) -> Result<SiteMap<Vec<i64>>> {
-        let mut folder = format!("{}{}", self.working_folder, gv::DISC_FOLDER);
-        if !utils::exists(&folder) {
-            utils::run_cmd_small_output(&format!("mkdir {}", folder));
-        }
-        folder.push('/');
-        self.output_candidate_sites_by_chrm(&to_pyval_map(m_candidate_sites), &folder, gv::DISC_SUFFIX)?;
-        let chrms: Vec<String> = m_candidate_sites.keys().filter(|c| c.len() <= 5).cloned().collect();
-        let results: Vec<Result<()>> =
-            self.pool().install(|| utils::par_map(chrms.len(), |i| self.run_filter_by_barcode_coverage(&chrms[i], iextend, i_cov_cutoff, &folder, gv::DISC_SUFFIX)));
-        for r in results {
-            r?;
-        }
-        let mut m_new: SiteMap<Vec<i64>> = IndexMap::new();
-        for chrm in m_candidate_sites.keys() {
-            let sf = format!("{}{}{}{}", folder, chrm, gv::DISC_SUFFIX, gv::DISC_SUFFIX_FILTER);
-            if !utils::exists(&sf) {
-                continue;
-            }
-            for line in utils::read_lines(&sf)? {
-                let f = split_ws(&line);
-                let pos = utils::pint(f[0])?;
-                let n_barcode = utils::pint(f[f.len() - 1])?;
-                let e = m_new.entry(chrm.clone()).or_default();
-                if !e.contains_key(&pos) {
-                    let clip = match m_candidate_sites.get(chrm).and_then(|m| m.get(&pos)) {
-                        Some(v) => v[0],
-                        None => continue,
-                    };
-                    e.insert(pos, vec![clip, n_barcode]);
-                }
-            }
-        }
-        Ok(m_new)
-    }
-
-    /// `output_candidate_sites` (TELocator version: no decoy filter)
-    pub fn output_candidate_sites(&self, m: &SiteMap<Vec<i64>>, sf_out: &str) -> Result<()> {
-        let mut f = utils::create(sf_out)?;
-        for (chrm, mp) in m.iter() {
-            for (pos, v) in mp.iter() {
-                write!(f, "{}\t{}\t", chrm, pos)?;
-                for x in v {
-                    write!(f, "{}\t", x)?;
-                }
-                writeln!(f)?;
-            }
-        }
-        f.flush()?;
-        Ok(())
-    }
 }

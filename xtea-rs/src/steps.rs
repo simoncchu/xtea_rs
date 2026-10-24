@@ -1,12 +1,12 @@
 //! The individual steps of `x_TEA_main.py` (one function per mode).
 
-use crate::cli::{automatic_gnrt_parameters, automatic_set_molecule_cutoff_for_10x_bam, py_f, set_globals_from_basic, Opts};
+use crate::cli::{automatic_gnrt_parameters, py_f, set_globals_from_basic, Opts};
 use crate::clip_disc_filter::XClipDiscFilter;
 use crate::globals as gv;
 use crate::intermediate_sites as xsites;
 use crate::py::fmt::py_int;
 use crate::orphan_transduction::XOrphanTransduction;
-use crate::tei_locator::{TeLocator, TeMultiLocator};
+use crate::tei_locator::TeMultiLocator;
 use crate::transduction::XTransduction;
 use crate::utils;
 use anyhow::{anyhow, Result};
@@ -224,34 +224,6 @@ pub fn run_mosaic_clip(opts: &Opts, b_automatic: bool, n_jobs: usize) -> Result<
         max_cov_cutoff,
         sf_out,
     )
-}
-
-/// `-B`: filter by barcode (molecule) coverage, 10X data
-pub fn run_barcode(opts: &Opts, n_jobs: usize) -> Result<()> {
-    let sf_ori_bam = req(&opts.bam, "-b")?;
-    let sf_barcode_bam = opt_str(&opts.barcode_bam);
-    let mut s_working_folder = opts.wfolder.clone();
-    let sf_candidate_list = opts.input.as_str();
-    let sf_out = req(&opts.output, "-o")?;
-    let sf_ref = opt_str(&opts.r#ref);
-    let m_input_sites = xsites::load_in_candidate_list(sf_candidate_list)?;
-    let iextend = 2500;
-    let i_cov_cutoff = automatic_set_molecule_cutoff_for_10x_bam(sf_ori_bam, &sf_ref, &s_working_folder, n_jobs)?;
-    println!("Using molecule coverage cutoff: {}", i_cov_cutoff);
-    if !s_working_folder.ends_with('/') {
-        s_working_folder.push('/');
-    }
-    let sf_tmp = format!("{}barcode_tmp.list", s_working_folder);
-    let caller = TeLocator::new(sf_ori_bam, &sf_barcode_bam, &s_working_folder, n_jobs, &sf_ref);
-    let m_sites_barcode = caller.filter_candidate_sites_by_barcode_coverage(&m_input_sites, iextend, i_cov_cutoff)?;
-    caller.output_candidate_sites(&m_sites_barcode, &sf_tmp)?;
-    let sf_tmp2 = format!("{}barcode_tmp2.list", s_working_folder);
-    xsites::merge_clip_disc_barcode(&sf_tmp, sf_candidate_list, &sf_tmp2)?;
-    xsites::combine_closing_sites(&sf_tmp2, 200, sf_out)
-}
-
-fn not_ported(step: &str) -> Result<()> {
-    Err(anyhow!("step `{}` is not available in this build of xtea-rs yet", step))
 }
 
 /// `--transduction`
@@ -535,12 +507,6 @@ pub fn run_igv(opts: &Opts, _n_jobs: usize) -> Result<()> {
     }
     x_igv.prepare_igv_scripts_multi_bams(&sf_sites, sf_bam_list, &opts.wfolder, opts.extend, &sf_gnm, sf_out)
 }
-pub fn run_collect_10x(_opts: &Opts, _n_jobs: usize) -> Result<()> {
-    not_ported("-E")
-}
-pub fn run_mutation(_opts: &Opts, _n_jobs: usize) -> Result<()> {
-    not_ported("-I")
-}
 /// `--gene`: annotate the calls with the genes of a GFF3 file.
 pub fn run_gene(opts: &Opts) -> Result<()> {
     run_gene_variant(opts, true)
@@ -559,15 +525,13 @@ pub fn run_gene_variant(opts: &Opts, b_user_extend: bool) -> Result<()> {
     gff.index_gene_annotation_interval_tree();
     gff.annotate_results(&opts.input, sf_output)
 }
-pub fn run_assembly(_opts: &Opts, _n_jobs: usize) -> Result<()> {
-    not_ported("-A")
-}
-pub fn run_map(_opts: &Opts, _n_jobs: usize) -> Result<()> {
-    not_ported("-M")
-}
-pub fn run_flk_map(_opts: &Opts, _n_jobs: usize) -> Result<()> {
-    not_ported("--flk_map")
-}
-pub fn run_filter_asm(_opts: &Opts, _n_jobs: usize) -> Result<()> {
-    not_ported("-F")
+
+/// The 10X linked-read modes (`-B`, `-E`, `-A`, `-M`, `--flk_map`, `-F`) and the internal
+/// mutation calling on the reads they collect (`-I`) are not part of the Rust version, which
+/// handles Illumina short reads only.
+pub fn run_x10_unsupported(mode: &str) -> Result<()> {
+    Err(anyhow!(
+        "{} is a 10X linked-read mode, which the Rust version of xTea does not support (Illumina short reads only); use the Python xTea for 10X data",
+        mode
+    ))
 }
