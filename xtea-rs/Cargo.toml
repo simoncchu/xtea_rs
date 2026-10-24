@@ -2,9 +2,11 @@
 name = "xtea"
 version = "0.1.0"
 edition = "2021"
-description = "xTea (comprehensive transposable element analyzer) re-implemented in Rust"
-license = "AGPL-3.0-only"
-repository = "https://github.com/parklab/xTea"
+description = "xTea (comprehensive transposable element analyzer) re-implemented in Rust, for Illumina short reads"
+license-file = "../LICENSE"
+repository = "https://github.com/simoncchu/xtea_rs"
+readme = "README.md"
+publish = false
 
 [features]
 default = []
